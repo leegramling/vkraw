@@ -2,12 +2,18 @@
 
 #include "vkraw/CubeRenderTypes.h"
 
+#if __has_include(<stb_image.h>)
+#define VKRAW_HAS_STB_IMAGE 1
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+#else
+#define VKRAW_HAS_STB_IMAGE 0
+#endif
+
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
 #if defined(VKRAW_ENABLE_IMAGE_FILE_IO)
-#include <jpeglib.h>
-#include <png.h>
 #include <tiffio.h>
 #endif
 
@@ -17,7 +23,6 @@
 #include <cmath>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
@@ -54,124 +59,27 @@ LoadedImage resizeRgbaNearest(const LoadedImage& src, uint32_t dstWidth, uint32_
     return dst;
 }
 
-std::vector<uint8_t> readBinaryFile(const std::string& path)
+bool decodeStbImage(const std::string& path, LoadedImage& out)
 {
-    std::ifstream input(path, std::ios::binary | std::ios::ate);
-    if (!input.is_open()) return {};
-    const std::streamsize size = input.tellg();
-    if (size <= 0) return {};
-    input.seekg(0, std::ios::beg);
-    std::vector<uint8_t> bytes(static_cast<size_t>(size));
-    if (!input.read(reinterpret_cast<char*>(bytes.data()), size)) return {};
-    return bytes;
+#if !VKRAW_HAS_STB_IMAGE
+    (void)path;
+    (void)out;
+    return false;
+#else
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    stbi_uc* pixels = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+    if (!pixels || width <= 0 || height <= 0) return false;
+    out.width = static_cast<uint32_t>(width);
+    out.height = static_cast<uint32_t>(height);
+    out.pixels.assign(pixels, pixels + (static_cast<size_t>(out.width) * out.height * 4U));
+    stbi_image_free(pixels);
+    return true;
+#endif
 }
 
 #if defined(VKRAW_ENABLE_IMAGE_FILE_IO)
-bool decodeJpeg(const std::string& path, LoadedImage& out)
-{
-    const std::vector<uint8_t> bytes = readBinaryFile(path);
-    if (bytes.empty()) return false;
-
-    jpeg_decompress_struct cinfo{};
-    jpeg_error_mgr jerr{};
-    cinfo.err = jpeg_std_error(&jerr);
-    jpeg_create_decompress(&cinfo);
-    jpeg_mem_src(&cinfo, bytes.data(), bytes.size());
-    if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK) {
-        jpeg_destroy_decompress(&cinfo);
-        return false;
-    }
-
-    cinfo.out_color_space = JCS_RGB;
-    jpeg_start_decompress(&cinfo);
-    out.width = cinfo.output_width;
-    out.height = cinfo.output_height;
-    const uint32_t channels = cinfo.output_components;
-    if (out.width == 0 || out.height == 0 || channels < 3) {
-        jpeg_finish_decompress(&cinfo);
-        jpeg_destroy_decompress(&cinfo);
-        return false;
-    }
-
-    std::vector<uint8_t> rgb(static_cast<size_t>(out.width) * out.height * channels);
-    while (cinfo.output_scanline < cinfo.output_height) {
-        uint8_t* row = rgb.data() + static_cast<size_t>(cinfo.output_scanline) * out.width * channels;
-        jpeg_read_scanlines(&cinfo, &row, 1);
-    }
-    jpeg_finish_decompress(&cinfo);
-    jpeg_destroy_decompress(&cinfo);
-
-    out.pixels.resize(static_cast<size_t>(out.width) * out.height * 4U);
-    for (size_t i = 0, j = 0; i < out.pixels.size(); i += 4, j += channels) {
-        out.pixels[i + 0] = rgb[j + 0];
-        out.pixels[i + 1] = rgb[j + 1];
-        out.pixels[i + 2] = rgb[j + 2];
-        out.pixels[i + 3] = 255;
-    }
-    return true;
-}
-
-bool decodePng(const std::string& path, LoadedImage& out)
-{
-    const std::vector<uint8_t> bytes = readBinaryFile(path);
-    if (bytes.size() < 8 || png_sig_cmp(bytes.data(), 0, 8) != 0) return false;
-
-    png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
-    if (!png) return false;
-    png_infop info = png_create_info_struct(png);
-    if (!info) {
-        png_destroy_read_struct(&png, nullptr, nullptr);
-        return false;
-    }
-    if (setjmp(png_jmpbuf(png))) {
-        png_destroy_read_struct(&png, &info, nullptr);
-        return false;
-    }
-
-    struct PngBufferReader {
-        const uint8_t* data = nullptr;
-        size_t size = 0;
-        size_t offset = 0;
-    } reader{bytes.data(), bytes.size(), 0};
-
-    png_set_read_fn(
-        png,
-        &reader,
-        [](png_structp pngPtr, png_bytep outBytes, png_size_t byteCount) {
-            auto* r = reinterpret_cast<PngBufferReader*>(png_get_io_ptr(pngPtr));
-            if (!r || (r->offset + byteCount) > r->size) png_error(pngPtr, "png read overflow");
-            std::memcpy(outBytes, r->data + r->offset, byteCount);
-            r->offset += byteCount;
-        });
-
-    png_read_info(png, info);
-    const png_uint_32 width = png_get_image_width(png, info);
-    const png_uint_32 height = png_get_image_height(png, info);
-    const int colorType = png_get_color_type(png, info);
-    const int bitDepth = png_get_bit_depth(png, info);
-
-    if (bitDepth == 16) png_set_strip_16(png);
-    if (colorType == PNG_COLOR_TYPE_PALETTE) png_set_palette_to_rgb(png);
-    if (colorType == PNG_COLOR_TYPE_GRAY && bitDepth < 8) png_set_expand_gray_1_2_4_to_8(png);
-    if (png_get_valid(png, info, PNG_INFO_tRNS)) png_set_tRNS_to_alpha(png);
-    if (colorType == PNG_COLOR_TYPE_GRAY || colorType == PNG_COLOR_TYPE_GRAY_ALPHA) png_set_gray_to_rgb(png);
-    if ((colorType & PNG_COLOR_MASK_ALPHA) == 0) png_set_add_alpha(png, 0xFF, PNG_FILLER_AFTER);
-
-    png_read_update_info(png, info);
-    out.width = static_cast<uint32_t>(width);
-    out.height = static_cast<uint32_t>(height);
-    out.pixels.resize(static_cast<size_t>(out.width) * out.height * 4U);
-
-    std::vector<png_bytep> rows(out.height);
-    for (uint32_t y = 0; y < out.height; ++y) {
-        rows[y] = out.pixels.data() + static_cast<size_t>(y) * out.width * 4U;
-    }
-    png_read_image(png, rows.data());
-    png_read_end(png, nullptr);
-    png_destroy_read_struct(&png, &info, nullptr);
-    return true;
-}
-
 bool decodeTiff(const std::string& path, LoadedImage& out)
 {
     TIFF* tif = TIFFOpen(path.c_str(), "r");
@@ -207,19 +115,15 @@ bool decodeTiff(const std::string& path, LoadedImage& out)
 bool loadTextureFromFile(const std::string& path, LoadedImage& out)
 {
     if (path.empty()) return false;
-#if !defined(VKRAW_ENABLE_IMAGE_FILE_IO)
-    (void)out;
-    return false;
-#else
     const std::string ext = std::filesystem::path(path).extension().string();
     std::string lowerExt = ext;
     std::transform(lowerExt.begin(), lowerExt.end(), lowerExt.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
-    if (lowerExt == ".jpg" || lowerExt == ".jpeg") return decodeJpeg(path, out);
-    if (lowerExt == ".png") return decodePng(path, out);
+    if (lowerExt == ".jpg" || lowerExt == ".jpeg" || lowerExt == ".png") return decodeStbImage(path, out);
+#if defined(VKRAW_ENABLE_IMAGE_FILE_IO)
     if (lowerExt == ".tif" || lowerExt == ".tiff") return decodeTiff(path, out);
-    return false;
 #endif
+    return false;
 }
 
 std::vector<uint8_t> makeProceduralEarthTexture(uint32_t width, uint32_t height)
@@ -338,12 +242,15 @@ void VkVisualizerApp::createTextureResources() {
     textureSourceLabel_ = "procedural";
     if (!textureLoadedFromFile_) {
         if (!earthTexturePath_.empty()) {
-#if !defined(VKRAW_ENABLE_IMAGE_FILE_IO)
-            std::cerr << "Earth file texture loading is disabled in this build (missing JPEG/PNG/TIFF libs), using procedural fallback texture.\n";
-#else
             std::cerr << "Failed to load earth texture at '" << earthTexturePath_
-                      << "' (supported formats: .jpg/.jpeg/.png/.tif/.tiff), using procedural fallback texture.\n";
+                      << "' (supported formats: .jpg/.jpeg/.png"
+#if defined(VKRAW_ENABLE_IMAGE_FILE_IO)
+                      << "/.tif/.tiff"
 #endif
+#if !VKRAW_HAS_STB_IMAGE
+                      << "; stb_image missing in this build"
+#endif
+                      << "), using procedural fallback texture.\n";
         }
         constexpr uint32_t kTextureWidth = 1024;
         constexpr uint32_t kTextureHeight = 512;

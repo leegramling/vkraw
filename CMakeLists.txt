@@ -32,17 +32,15 @@ set(_VKRAW_USE_SYSTEM_IMAGE_LIBS_DEFAULT ON)
 if(WIN32)
     set(_VKRAW_USE_SYSTEM_IMAGE_LIBS_DEFAULT OFF)
 endif()
-option(VKRAW_USE_SYSTEM_IMAGE_LIBS "Enable JPEG/PNG/TIFF file texture decoding in vkraw via system libraries" ${_VKRAW_USE_SYSTEM_IMAGE_LIBS_DEFAULT})
+option(VKRAW_USE_SYSTEM_IMAGE_LIBS "Enable optional TIFF file texture decoding in vkraw via system libraries" ${_VKRAW_USE_SYSTEM_IMAGE_LIBS_DEFAULT})
 
 set(VKRAW_HAS_SYSTEM_IMAGE_LIBS OFF)
 if(VKRAW_USE_SYSTEM_IMAGE_LIBS)
-    find_package(JPEG QUIET)
-    find_package(PNG QUIET)
     find_package(TIFF QUIET)
-    if(JPEG_FOUND AND PNG_FOUND AND TIFF_FOUND)
+    if(TIFF_FOUND)
         set(VKRAW_HAS_SYSTEM_IMAGE_LIBS ON)
     else()
-        message(WARNING "JPEG/PNG/TIFF libraries not all found. vkraw file texture loading (.jpg/.png/.tif) will be disabled; procedural fallback remains enabled.")
+        message(WARNING "TIFF library not found. vkraw .tif/.tiff texture loading will be disabled; .jpg/.jpeg/.png via stb_image remain enabled.")
     endif()
 endif()
 
@@ -145,7 +143,7 @@ add_executable(vkraw
 
 add_dependencies(vkraw shaders)
 
-target_include_directories(vkraw PRIVATE src)
+target_include_directories(vkraw PRIVATE src external/glfw/deps)
 
 target_link_libraries(vkraw PRIVATE
     vk-bootstrap::vk-bootstrap
@@ -156,7 +154,7 @@ target_link_libraries(vkraw PRIVATE
 )
 
 if(VKRAW_HAS_SYSTEM_IMAGE_LIBS)
-    target_link_libraries(vkraw PRIVATE JPEG::JPEG PNG::PNG TIFF::TIFF)
+    target_link_libraries(vkraw PRIVATE TIFF::TIFF)
     target_compile_definitions(vkraw PRIVATE VKRAW_ENABLE_IMAGE_FILE_IO=1)
 endif()
 
