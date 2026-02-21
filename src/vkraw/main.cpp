@@ -2,7 +2,7 @@
 
 #include <cstdlib>
 
-int main()
+int main(int argc, char** argv)
 {
-    return vkraw::runVkrawApp();
+    return vkraw::runVkrawApp(argc, argv);
 }

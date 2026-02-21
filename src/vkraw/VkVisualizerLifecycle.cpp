@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <string>
 #include <stdexcept>
 
 namespace vkraw {
@@ -170,6 +171,10 @@ void VkVisualizerApp::mainLoop() {
         runSeconds_ = elapsedSeconds;
         cpuFrameMs_ = 1000.0f * deltaSeconds;
 
+        if (runDurationSeconds_ > 0.0f && runSeconds_ >= runDurationSeconds_) {
+            break;
+        }
+
         drawFrame(deltaSeconds, elapsedSeconds);
     }
 
@@ -310,10 +315,16 @@ void VkVisualizerApp::cleanup() {
     glfwTerminate();
 }
 
-int runVkrawApp()
+int runVkrawApp(int argc, char** argv)
 {
     try {
         VkVisualizerApp visualizer;
+        for (int i = 1; i < argc; ++i) {
+            const std::string arg = argv[i];
+            if ((arg == "--seconds" || arg == "--duration") && (i + 1) < argc) {
+                visualizer.setRunDurationSeconds(std::stof(argv[++i]));
+            }
+        }
         visualizer.run();
     } catch (const std::exception& e) {
         std::cout << "[EXIT] vkraw status=FAIL code=1 reason=\"" << e.what() << "\"" << std::endl;

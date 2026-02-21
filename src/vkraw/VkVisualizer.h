@@ -2,6 +2,6 @@
 
 namespace vkraw {
 
-int runVkrawApp();
+int runVkrawApp(int argc, char** argv);
 
 } // namespace vkraw

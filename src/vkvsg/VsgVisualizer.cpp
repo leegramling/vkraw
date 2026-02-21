@@ -254,6 +254,9 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
         windowTraits->width = 1280;
         windowTraits->height = 720;
         windowTraits->swapchainPreferences.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+        float runDurationSeconds = 0.0f;
+        arguments.read("--seconds", runDurationSeconds);
+        arguments.read("--duration", runDurationSeconds);
 
         if (arguments.errors()) return arguments.writeErrorMessages(std::cerr);
 
@@ -337,6 +340,11 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
             ++frameCount;
             runSeconds = elapsed;
             cpuFrameMs = 1000.0f * delta;
+
+            if (runDurationSeconds > 0.0f && runSeconds >= runDurationSeconds)
+            {
+                break;
+            }
 
             viewer->handleEvents();
 

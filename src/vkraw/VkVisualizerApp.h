@@ -16,6 +16,7 @@ namespace vkraw {
 class VkVisualizerApp {
 public:
     void run();
+    void setRunDurationSeconds(float seconds) { runDurationSeconds_ = seconds; }
 
 private:
     static constexpr uint32_t kWindowWidth = 1280;
@@ -29,6 +30,7 @@ private:
     uint64_t frameCount_ = 0;
     float runSeconds_ = 0.0f;
     float cpuFrameMs_ = 0.0f;
+    float runDurationSeconds_ = 0.0f;
     std::vector<Vertex> sceneVertices_{};
     std::vector<uint32_t> sceneIndices_{};
     uint32_t sceneIndexCount_ = 0;
@@ -86,6 +88,6 @@ private:
     void cleanup();
 };
 
-int runVkrawApp();
+int runVkrawApp(int argc, char** argv);
 
 } // namespace vkraw
