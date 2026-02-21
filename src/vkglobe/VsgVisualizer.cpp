@@ -209,7 +209,7 @@ public:
         if (distance < 1.0) return;
 
         distance *= zoomScale;
-        const double minDistance = equatorialRadius * 1.01;
+        const double minDistance = equatorialRadius + 100.0;
         const double maxDistance = equatorialRadius * 50.0;
         distance = std::clamp(distance, minDistance, maxDistance);
 
