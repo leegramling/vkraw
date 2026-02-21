@@ -1,5 +1,12 @@
 #include "vkraw/VkVisualizer.h"
+#include "vkraw/CubeObject.h"
+#include "vkraw/CubeRenderTypes.h"
+#include "vkraw/UIObject.h"
 #include "vkraw/VkContext.h"
+#include "vkraw/setup/FramebufferSetup.h"
+#include "vkraw/setup/PipelineSetup.h"
+#include "vkraw/setup/RenderPassSetup.h"
+#include "vkraw/setup/SwapchainSetup.h"
 
 #include <algorithm>
 #include <array>
@@ -138,13 +145,8 @@ class VkVisualizer {
   private:
     VkContext context_{};
 
-    float yaw_ = 30.0f;
-    float pitch_ = 20.0f;
-    float autoSpinSpeedDeg_ = 22.5f;
-    int cubeCount_ = 100000;
-    float fps_ = 0.0f;
-    bool showDemoWindow_ = true;
-    std::vector<glm::vec3> cubeOffsets_;
+    vkraw::CubeObject cube_;
+    vkraw::UIObject ui_;
     float gpuFrameMs_ = 0.0f;
     uint64_t frameCount_ = 0;
     float runSeconds_ = 0.0f;
@@ -193,34 +195,13 @@ class VkVisualizer {
         createCommandBuffers();
         createTimestampQueryPool();
         createSyncObjects();
-        rebuildCubeOffsets();
+        cube_.rebuildOffsets();
         initImGui();
 
-        std::cout << "[START] vkraw cubes=" << cubeCount_
+        std::cout << "[START] vkraw cubes=" << cube_.cubeCount
                   << " present_mode=" << presentModeToString(context_.selectedPresentMode)
                   << " timestamps=" << (context_.gpuTimestampQueryPool != VK_NULL_HANDLE ? "on" : "off")
                   << std::endl;
-    }
-
-    void rebuildCubeOffsets() {
-        cubeOffsets_.clear();
-        cubeOffsets_.reserve(static_cast<size_t>(cubeCount_));
-
-        const int side = std::max(1, static_cast<int>(std::ceil(std::cbrt(static_cast<float>(cubeCount_)))));
-        const float spacing = 2.8f;
-        const glm::vec3 centerOffset(
-            0.5f * static_cast<float>(side - 1),
-            0.5f * static_cast<float>(side - 1),
-            0.5f * static_cast<float>(side - 1)
-        );
-
-        for (int i = 0; i < cubeCount_; ++i) {
-            const int x = i % side;
-            const int y = (i / side) % side;
-            const int z = i / (side * side);
-            const glm::vec3 gridPos(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
-            cubeOffsets_.push_back((gridPos - centerOffset) * spacing);
-        }
     }
 
     void createInstance() {
@@ -276,268 +257,25 @@ class VkVisualizer {
     }
 
     void createSwapchain() {
-        int width = 0;
-        int height = 0;
-        glfwGetFramebufferSize(context_.window, &width, &height);
-
-        auto buildSwapchainWithMode = [&](VkPresentModeKHR mode) {
-            vkb::SwapchainBuilder builder(context_.device);
-            return builder.set_desired_extent(static_cast<uint32_t>(width), static_cast<uint32_t>(height))
-                .set_desired_present_mode(mode)
-                .set_old_swapchain(context_.swapchain)
-                .build();
-        };
-
-        auto swapchainRet = buildSwapchainWithMode(VK_PRESENT_MODE_IMMEDIATE_KHR);
-        if (!swapchainRet) {
-            swapchainRet = buildSwapchainWithMode(VK_PRESENT_MODE_FIFO_KHR);
-        }
-
-        if (!swapchainRet) {
-            throw std::runtime_error(swapchainRet.error().message());
-        }
-
-        if (context_.swapchain.swapchain != VK_NULL_HANDLE) {
-            vkb::destroy_swapchain(context_.swapchain);
-        }
-
-        context_.swapchain = swapchainRet.value();
-        context_.selectedPresentMode = context_.swapchain.present_mode;
-
-        auto imagesRet = context_.swapchain.get_images();
-        auto imageViewsRet = context_.swapchain.get_image_views();
-        if (!imagesRet || !imageViewsRet) {
-            throw std::runtime_error("failed to fetch swapchain images or views");
-        }
-        context_.swapchainImages = imagesRet.value();
-        context_.swapchainImageViews = imageViewsRet.value();
+        vkraw::setup::createSwapchain(context_, context_.window);
     }
 
     void createRenderPass() {
-        VkAttachmentDescription colorAttachment{};
-        colorAttachment.format = context_.swapchain.image_format;
-        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-        VkAttachmentDescription depthAttachment{};
-        depthAttachment.format = findDepthFormat();
-        depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-        VkAttachmentReference colorRef{};
-        colorRef.attachment = 0;
-        colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-        VkAttachmentReference depthRef{};
-        depthRef.attachment = 1;
-        depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-        VkSubpassDescription subpass{};
-        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        subpass.colorAttachmentCount = 1;
-        subpass.pColorAttachments = &colorRef;
-        subpass.pDepthStencilAttachment = &depthRef;
-
-        VkSubpassDependency dependency{};
-        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-        dependency.dstSubpass = 0;
-        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-        dependency.dstAccessMask =
-            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-        std::array<VkAttachmentDescription, 2> attachments{colorAttachment, depthAttachment};
-        VkRenderPassCreateInfo renderPassInfo{};
-        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-        renderPassInfo.pAttachments = attachments.data();
-        renderPassInfo.subpassCount = 1;
-        renderPassInfo.pSubpasses = &subpass;
-        renderPassInfo.dependencyCount = 1;
-        renderPassInfo.pDependencies = &dependency;
-
-        if (vkCreateRenderPass(context_.device.device, &renderPassInfo, nullptr, &context_.renderPass) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create render pass");
-        }
-    }
-
-    VkShaderModule createShaderModule(const std::vector<char>& code) {
-        VkShaderModuleCreateInfo createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        createInfo.codeSize = code.size();
-        createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
-
-        VkShaderModule shaderModule = VK_NULL_HANDLE;
-        if (vkCreateShaderModule(context_.device.device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create shader module");
-        }
-        return shaderModule;
+        vkraw::setup::createRenderPass(context_, findDepthFormat());
     }
 
     void createDescriptorSetLayout() {
-        VkDescriptorSetLayoutBinding uboBinding{};
-        uboBinding.binding = 0;
-        uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        uboBinding.descriptorCount = 1;
-        uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = 1;
-        layoutInfo.pBindings = &uboBinding;
-
-        if (vkCreateDescriptorSetLayout(context_.device.device, &layoutInfo, nullptr, &context_.descriptorSetLayout) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create descriptor set layout");
-        }
+        vkraw::setup::createDescriptorSetLayout(context_);
     }
 
     void createGraphicsPipeline() {
         const auto vertShaderCode = readShaderFile("cube.vert.spv");
         const auto fragShaderCode = readShaderFile("cube.frag.spv");
-
-        VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
-        VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
-
-        VkPipelineShaderStageCreateInfo vertStageInfo{};
-        vertStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        vertStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-        vertStageInfo.module = vertShaderModule;
-        vertStageInfo.pName = "main";
-
-        VkPipelineShaderStageCreateInfo fragStageInfo{};
-        fragStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        fragStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-        fragStageInfo.module = fragShaderModule;
-        fragStageInfo.pName = "main";
-
-        VkPipelineShaderStageCreateInfo shaderStages[] = {vertStageInfo, fragStageInfo};
-
-        auto bindingDescription = Vertex::bindingDescription();
-        auto attributeDescriptions = Vertex::attributeDescriptions();
-
-        VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
-        vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInputInfo.vertexBindingDescriptionCount = 1;
-        vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
-        vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
-
-        VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-        inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-
-        VkViewport viewport{};
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = static_cast<float>(context_.swapchain.extent.width);
-        viewport.height = static_cast<float>(context_.swapchain.extent.height);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-
-        VkRect2D scissor{};
-        scissor.offset = {0, 0};
-        scissor.extent = context_.swapchain.extent;
-
-        VkPipelineViewportStateCreateInfo viewportState{};
-        viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-        viewportState.viewportCount = 1;
-        viewportState.pViewports = &viewport;
-        viewportState.scissorCount = 1;
-        viewportState.pScissors = &scissor;
-
-        VkPipelineRasterizationStateCreateInfo rasterizer{};
-        rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-        rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-        rasterizer.lineWidth = 1.0f;
-        rasterizer.cullMode = VK_CULL_MODE_NONE;
-        rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
-
-        VkPipelineMultisampleStateCreateInfo multisampling{};
-        multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-        multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-        VkPipelineDepthStencilStateCreateInfo depthStencil{};
-        depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-        depthStencil.depthTestEnable = VK_TRUE;
-        depthStencil.depthWriteEnable = VK_TRUE;
-        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
-
-        VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
-                                              VK_COLOR_COMPONENT_A_BIT;
-
-        VkPipelineColorBlendStateCreateInfo colorBlending{};
-        colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-        colorBlending.attachmentCount = 1;
-        colorBlending.pAttachments = &colorBlendAttachment;
-
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 1;
-        pipelineLayoutInfo.pSetLayouts = &context_.descriptorSetLayout;
-        VkPushConstantRange pushConstantRange{};
-        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        pushConstantRange.offset = 0;
-        pushConstantRange.size = sizeof(PushConstantData);
-        pipelineLayoutInfo.pushConstantRangeCount = 1;
-        pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-
-        if (vkCreatePipelineLayout(context_.device.device, &pipelineLayoutInfo, nullptr, &context_.pipelineLayout) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create pipeline layout");
-        }
-
-        VkGraphicsPipelineCreateInfo pipelineInfo{};
-        pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-        pipelineInfo.stageCount = 2;
-        pipelineInfo.pStages = shaderStages;
-        pipelineInfo.pVertexInputState = &vertexInputInfo;
-        pipelineInfo.pInputAssemblyState = &inputAssembly;
-        pipelineInfo.pViewportState = &viewportState;
-        pipelineInfo.pRasterizationState = &rasterizer;
-        pipelineInfo.pMultisampleState = &multisampling;
-        pipelineInfo.pDepthStencilState = &depthStencil;
-        pipelineInfo.pColorBlendState = &colorBlending;
-        pipelineInfo.layout = context_.pipelineLayout;
-        pipelineInfo.renderPass = context_.renderPass;
-        pipelineInfo.subpass = 0;
-
-        if (vkCreateGraphicsPipelines(context_.device.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &context_.pipeline) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create graphics pipeline");
-        }
-
-        vkDestroyShaderModule(context_.device.device, fragShaderModule, nullptr);
-        vkDestroyShaderModule(context_.device.device, vertShaderModule, nullptr);
+        vkraw::setup::createGraphicsPipeline(context_, vertShaderCode, fragShaderCode, sizeof(PushConstantData));
     }
 
     void createFramebuffers() {
-        context_.swapchainFramebuffers.resize(context_.swapchainImageViews.size());
-
-        for (size_t i = 0; i < context_.swapchainImageViews.size(); ++i) {
-            std::array<VkImageView, 2> attachments{context_.swapchainImageViews[i], context_.depthImageView};
-
-            VkFramebufferCreateInfo framebufferInfo{};
-            framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-            framebufferInfo.renderPass = context_.renderPass;
-            framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-            framebufferInfo.pAttachments = attachments.data();
-            framebufferInfo.width = context_.swapchain.extent.width;
-            framebufferInfo.height = context_.swapchain.extent.height;
-            framebufferInfo.layers = 1;
-
-            if (vkCreateFramebuffer(context_.device.device, &framebufferInfo, nullptr, &context_.swapchainFramebuffers[i]) != VK_SUCCESS) {
-                throw std::runtime_error("failed to create framebuffer");
-            }
-        }
+        vkraw::setup::createFramebuffers(context_);
     }
 
     void createCommandPool() {
@@ -851,20 +589,7 @@ class VkVisualizer {
     }
 
     void processInput(float deltaSeconds) {
-        constexpr float rotateSpeed = 90.0f;
-
-        if (glfwGetKey(context_.window, GLFW_KEY_LEFT) == GLFW_PRESS) {
-            yaw_ -= rotateSpeed * deltaSeconds;
-        }
-        if (glfwGetKey(context_.window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
-            yaw_ += rotateSpeed * deltaSeconds;
-        }
-        if (glfwGetKey(context_.window, GLFW_KEY_UP) == GLFW_PRESS) {
-            pitch_ += rotateSpeed * deltaSeconds;
-        }
-        if (glfwGetKey(context_.window, GLFW_KEY_DOWN) == GLFW_PRESS) {
-            pitch_ -= rotateSpeed * deltaSeconds;
-        }
+        cube_.processInput(context_.window, deltaSeconds);
     }
 
     void updateUniformBuffer() {
@@ -880,11 +605,7 @@ class VkVisualizer {
     }
 
     glm::mat4 computeBaseRotation(float elapsedSeconds) const {
-        const float autoYaw = yaw_ + autoSpinSpeedDeg_ * elapsedSeconds;
-        glm::mat4 model(1.0f);
-        model = glm::rotate(model, glm::radians(pitch_), glm::vec3(1.0f, 0.0f, 0.0f));
-        model = glm::rotate(model, glm::radians(autoYaw), glm::vec3(0.0f, 1.0f, 0.0f));
-        return model;
+        return cube_.computeBaseRotation(elapsedSeconds);
     }
 
     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, float elapsedSeconds, size_t frameIndex) {
@@ -925,7 +646,7 @@ class VkVisualizer {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, context_.pipelineLayout, 0, 1, &context_.descriptorSet, 0, nullptr);
 
         const glm::mat4 baseRotation = computeBaseRotation(elapsedSeconds);
-        for (const glm::vec3& offset : cubeOffsets_) {
+        for (const glm::vec3& offset : cube_.offsets) {
             PushConstantData push{};
             push.model = glm::translate(baseRotation, offset);
             vkCmdPushConstants(commandBuffer, context_.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstantData), &push);
@@ -1030,30 +751,12 @@ class VkVisualizer {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        ImGui::Begin("Cube Controls");
-        ImGui::Text("Arrow keys rotate the cube");
-        ImGui::SliderFloat("Yaw", &yaw_, -180.0f, 180.0f);
-        ImGui::SliderFloat("Pitch", &pitch_, -89.0f, 89.0f);
-        ImGui::SliderFloat("Auto spin (deg/s)", &autoSpinSpeedDeg_, -180.0f, 180.0f);
-        if (ImGui::SliderInt("Cube count", &cubeCount_, 20000, 100000)) {
-            rebuildCubeOffsets();
+        ui_.fps = (deltaSeconds > 0.0f) ? (1.0f / deltaSeconds) : 0.0f;
+        ui_.frameTimeMs = 1000.0f * deltaSeconds;
+        ui_.gpuFrameMs = gpuFrameMs_;
+        if (ui_.draw(cube_, presentModeToString(context_.selectedPresentMode), context_.gpuTimestampQueryPool != VK_NULL_HANDLE)) {
+            cube_.rebuildOffsets();
         }
-        fps_ = (deltaSeconds > 0.0f) ? (1.0f / deltaSeconds) : 0.0f;
-        const uint64_t triangles = static_cast<uint64_t>(cubeCount_) * 12ULL;
-        const uint64_t vertices = static_cast<uint64_t>(cubeCount_) * 8ULL;
-        ImGui::Text("FPS %.1f", fps_);
-        ImGui::Text("Frame time %.3f ms", 1000.0f * deltaSeconds);
-        ImGui::Text("Triangles %llu", static_cast<unsigned long long>(triangles));
-        ImGui::Text("Vertices %llu", static_cast<unsigned long long>(vertices));
-        ImGui::Text("Present mode %s", presentModeToString(context_.selectedPresentMode));
-        if (context_.gpuTimestampQueryPool != VK_NULL_HANDLE) {
-            ImGui::Text("GPU frame %.3f ms", gpuFrameMs_);
-        } else {
-            ImGui::TextUnformatted("GPU frame n/a (timestamps unsupported)");
-        }
-        ImGui::End();
-
-        ImGui::ShowDemoWindow(&showDemoWindow_);
 
         ImGui::Render();
 
@@ -1118,15 +821,15 @@ class VkVisualizer {
         }
 
         vkDeviceWaitIdle(context_.device.device);
-        const uint64_t triangles = static_cast<uint64_t>(cubeCount_) * 12ULL;
-        const uint64_t vertices = static_cast<uint64_t>(cubeCount_) * 8ULL;
+        const uint64_t triangles = cube_.triangles();
+        const uint64_t vertices = cube_.vertices();
         std::cout << "[EXIT] vkraw status=OK code=0"
                   << " frames=" << frameCount_
                   << " seconds=" << runSeconds_
-                  << " cubes=" << cubeCount_
+                  << " cubes=" << cube_.cubeCount
                   << " triangles=" << triangles
                   << " vertices=" << vertices
-                  << " fps=" << fps_
+                  << " fps=" << ui_.fps
                   << " cpu_ms=" << cpuFrameMs_
                   << " gpu_ms=" << gpuFrameMs_
                   << " present_mode=" << presentModeToString(context_.selectedPresentMode)

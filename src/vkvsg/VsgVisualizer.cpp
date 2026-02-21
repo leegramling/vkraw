@@ -1,4 +1,6 @@
 #include "vkvsg/VsgVisualizer.h"
+#include "vkvsg/CubeObject.h"
+#include "vkvsg/UIObject.h"
 
 #include <vsg/all.h>
 #include <vsgImGui/RenderImGui.h>
@@ -12,24 +14,17 @@
 #include <iostream>
 #include <vector>
 
-struct UiState : public vsg::Inherit<vsg::Object, UiState>
+struct AppState : public vsg::Inherit<vsg::Object, AppState>
 {
-    float yaw = 30.0f;
-    float pitch = 20.0f;
-    float autoSpinDegPerSec = 22.5f;
-    int cubeCount = 100000;
-    bool showDemoWindow = true;
-    float deltaTimeMs = 0.0f;
-    float fps = 0.0f;
-    float gpuFrameMs = 0.0f;
-    const char* presentModeName = "IMMEDIATE (requested)";
+    vkvsg::CubeObject cube;
+    vkvsg::UIObject ui;
 };
 
 class RotationInputHandler : public vsg::Inherit<vsg::Visitor, RotationInputHandler>
 {
 public:
-    explicit RotationInputHandler(vsg::ref_ptr<UiState> inUiState) :
-        uiState(std::move(inUiState))
+    explicit RotationInputHandler(vsg::ref_ptr<AppState> inState) :
+        state(std::move(inState))
     {
     }
 
@@ -38,11 +33,7 @@ public:
 
     void update(float dt)
     {
-        constexpr float rotationSpeed = 90.0f;
-        if (left) uiState->yaw -= rotationSpeed * dt;
-        if (right) uiState->yaw += rotationSpeed * dt;
-        if (up) uiState->pitch += rotationSpeed * dt;
-        if (down) uiState->pitch -= rotationSpeed * dt;
+        state->cube.applyInput(left, right, up, down, dt);
     }
 
 private:
@@ -67,7 +58,7 @@ private:
         }
     }
 
-    vsg::ref_ptr<UiState> uiState;
+    vsg::ref_ptr<AppState> state;
     bool left = false;
     bool right = false;
     bool up = false;
@@ -77,34 +68,18 @@ private:
 class CubeGui : public vsg::Inherit<vsg::Command, CubeGui>
 {
 public:
-    explicit CubeGui(vsg::ref_ptr<UiState> inUiState) :
-        uiState(std::move(inUiState))
+    explicit CubeGui(vsg::ref_ptr<AppState> inState) :
+        state(std::move(inState))
     {
     }
 
     void record(vsg::CommandBuffer&) const override
     {
-        ImGui::Begin("Cube Controls");
-        ImGui::Text("Arrow keys rotate the cube");
-        ImGui::SliderFloat("Yaw", &uiState->yaw, -180.0f, 180.0f);
-        ImGui::SliderFloat("Pitch", &uiState->pitch, -89.0f, 89.0f);
-        ImGui::SliderFloat("Auto spin (deg/s)", &uiState->autoSpinDegPerSec, -180.0f, 180.0f);
-        ImGui::SliderInt("Cube count", &uiState->cubeCount, 20000, 100000);
-        const uint64_t triangles = static_cast<uint64_t>(uiState->cubeCount) * 12ULL;
-        const uint64_t vertices = static_cast<uint64_t>(uiState->cubeCount) * 8ULL;
-        ImGui::Text("FPS %.1f", uiState->fps);
-        ImGui::Text("Frame time %.3f ms", uiState->deltaTimeMs);
-        ImGui::Text("Triangles %llu", static_cast<unsigned long long>(triangles));
-        ImGui::Text("Vertices %llu", static_cast<unsigned long long>(vertices));
-        ImGui::Text("Present mode %s", uiState->presentModeName);
-        ImGui::Text("GPU frame %.3f ms", uiState->gpuFrameMs);
-        ImGui::End();
-
-        ImGui::ShowDemoWindow(&uiState->showDemoWindow);
+        state->ui.draw(state->cube);
     }
 
 private:
-    vsg::ref_ptr<UiState> uiState;
+    vsg::ref_ptr<AppState> state;
 };
 
 vsg::Paths shaderSearchPaths()
@@ -317,25 +292,25 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
         view->addChild(scene);
         renderGraph->addChild(view);
 
-        auto uiState = UiState::create();
-        rebuildCubeInstances(*cubesGroup, cubeNode, uiState->cubeCount);
-        int renderedCubeCount = uiState->cubeCount;
+        auto appState = AppState::create();
+        rebuildCubeInstances(*cubesGroup, cubeNode, appState->cube.cubeCount);
+        int renderedCubeCount = appState->cube.cubeCount;
         uint64_t frameCount = 0;
         float runSeconds = 0.0f;
         float cpuFrameMs = 0.0f;
 
-        std::cout << "[START] vkvsg cubes=" << uiState->cubeCount
-                  << " present_mode=" << uiState->presentModeName
+        std::cout << "[START] vkvsg cubes=" << appState->cube.cubeCount
+                  << " present_mode=" << appState->ui.presentModeName
                   << " gpu_profiler=on" << std::endl;
 
-        auto renderImGui = vsgImGui::RenderImGui::create(window, CubeGui::create(uiState));
+        auto renderImGui = vsgImGui::RenderImGui::create(window, CubeGui::create(appState));
         renderGraph->addChild(renderImGui);
 
         ImGuiIO& io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
         io.MouseDrawCursor = true;
 
-        auto inputHandler = RotationInputHandler::create(uiState);
+        auto inputHandler = RotationInputHandler::create(appState);
 
         auto profilerSettings = vsg::Profiler::Settings::create();
         profilerSettings->cpu_instrumentation_level = 0;
@@ -366,37 +341,35 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
             viewer->handleEvents();
 
             inputHandler->update(delta);
-            uiState->deltaTimeMs = 1000.0f * delta;
-            uiState->fps = (delta > 0.0f) ? (1.0f / delta) : 0.0f;
-            uiState->gpuFrameMs = static_cast<float>(latestVsgGpuFrameMs(*profiler));
+            appState->ui.deltaTimeMs = 1000.0f * delta;
+            appState->ui.fps = (delta > 0.0f) ? (1.0f / delta) : 0.0f;
+            appState->ui.gpuFrameMs = static_cast<float>(latestVsgGpuFrameMs(*profiler));
 
-            if (uiState->cubeCount != renderedCubeCount)
+            if (appState->cube.cubeCount != renderedCubeCount)
             {
-                renderedCubeCount = uiState->cubeCount;
+                renderedCubeCount = appState->cube.cubeCount;
                 rebuildCubeInstances(*cubesGroup, cubeNode, renderedCubeCount);
             }
 
-            const double yaw = vsg::radians(static_cast<double>(uiState->yaw + uiState->autoSpinDegPerSec * elapsed));
-            const double pitch = vsg::radians(static_cast<double>(uiState->pitch));
-            cubeTransform->matrix = vsg::rotate(yaw, 0.0, 0.0, 1.0) * vsg::rotate(pitch, 1.0, 0.0, 0.0);
+            cubeTransform->matrix = appState->cube.computeRotation(elapsed);
 
             viewer->update();
             viewer->recordAndSubmit();
             viewer->present();
         }
 
-        const uint64_t triangles = static_cast<uint64_t>(uiState->cubeCount) * 12ULL;
-        const uint64_t vertices = static_cast<uint64_t>(uiState->cubeCount) * 8ULL;
+        const uint64_t triangles = appState->cube.triangles();
+        const uint64_t vertices = appState->cube.vertices();
         std::cout << "[EXIT] vkvsg status=OK code=0"
                   << " frames=" << frameCount
                   << " seconds=" << runSeconds
-                  << " cubes=" << uiState->cubeCount
+                  << " cubes=" << appState->cube.cubeCount
                   << " triangles=" << triangles
                   << " vertices=" << vertices
-                  << " fps=" << uiState->fps
+                  << " fps=" << appState->ui.fps
                   << " cpu_ms=" << cpuFrameMs
-                  << " gpu_ms=" << uiState->gpuFrameMs
-                  << " present_mode=" << uiState->presentModeName
+                  << " gpu_ms=" << appState->ui.gpuFrameMs
+                  << " present_mode=" << appState->ui.presentModeName
                   << std::endl;
     }
     catch (const vsg::Exception& e)

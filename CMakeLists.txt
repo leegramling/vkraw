@@ -114,6 +114,10 @@ add_custom_target(shaders ALL
 add_executable(vkraw
     src/vkraw/main.cpp
     src/vkraw/VkVisualizer.cpp
+    src/vkraw/setup/SwapchainSetup.cpp
+    src/vkraw/setup/RenderPassSetup.cpp
+    src/vkraw/setup/FramebufferSetup.cpp
+    src/vkraw/setup/PipelineSetup.cpp
 )
 
 add_dependencies(vkraw shaders)
