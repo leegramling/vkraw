@@ -113,7 +113,11 @@ add_custom_target(shaders ALL
 
 add_executable(vkraw
     src/vkraw/main.cpp
-    src/vkraw/VkVisualizer.cpp
+    src/vkraw/VkVisualizerLifecycle.cpp
+    src/vkraw/VkVisualizerDevice.cpp
+    src/vkraw/VkVisualizerResources.cpp
+    src/vkraw/VkVisualizerImGui.cpp
+    src/vkraw/VkVisualizerFrame.cpp
     src/vkraw/setup/SwapchainSetup.cpp
     src/vkraw/setup/RenderPassSetup.cpp
     src/vkraw/setup/FramebufferSetup.cpp
