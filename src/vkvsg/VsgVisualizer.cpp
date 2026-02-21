@@ -222,25 +222,33 @@ double latestVsgGpuFrameMs(const vsg::Profiler& profiler)
         return 0.0;
     }
 
-    uint64_t begin = profiler.log->frameIndices.back();
-    uint64_t end = profiler.log->entry(begin).reference;
-    if (begin > end) std::swap(begin, end);
+    auto frameGpuMs = [&](uint64_t frameRef) {
+        uint64_t begin = frameRef;
+        uint64_t end = profiler.log->entry(begin).reference;
+        if (begin > end) std::swap(begin, end);
 
-    double totalMs = 0.0;
-    for (uint64_t i = begin; i <= end; ++i)
+        double totalMs = 0.0;
+        for (uint64_t i = begin; i <= end; ++i)
+        {
+            auto& entry = profiler.log->entry(i);
+            if (!entry.enter || entry.type != vsg::ProfileLog::COMMAND_BUFFER) continue;
+
+            auto& pair = profiler.log->entry(entry.reference);
+            if (entry.gpuTime == 0 || pair.gpuTime == 0) continue;
+
+            const uint64_t minTime = std::min(entry.gpuTime, pair.gpuTime);
+            const uint64_t maxTime = std::max(entry.gpuTime, pair.gpuTime);
+            totalMs += static_cast<double>(maxTime - minTime) * profiler.log->timestampScaleToMilliseconds;
+        }
+        return totalMs;
+    };
+
+    for (auto it = profiler.log->frameIndices.rbegin(); it != profiler.log->frameIndices.rend(); ++it)
     {
-        auto& entry = profiler.log->entry(i);
-        if (!entry.enter || entry.type != vsg::ProfileLog::COMMAND_BUFFER) continue;
-
-        auto& pair = profiler.log->entry(entry.reference);
-        if (entry.gpuTime == 0 || pair.gpuTime == 0) continue;
-
-        const uint64_t minTime = std::min(entry.gpuTime, pair.gpuTime);
-        const uint64_t maxTime = std::max(entry.gpuTime, pair.gpuTime);
-        totalMs += static_cast<double>(maxTime - minTime) * profiler.log->timestampScaleToMilliseconds;
+        const double ms = frameGpuMs(*it);
+        if (ms > 0.0) return ms;
     }
-
-    return totalMs;
+    return 0.0;
 }
 
 int vkvsg::VsgVisualizer::run(int argc, char** argv)
@@ -283,8 +291,8 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
         scene->addChild(cubeTransform);
 
         const double aspect = static_cast<double>(window->extent2D().width) / static_cast<double>(window->extent2D().height);
-        auto perspective = vsg::Perspective::create(45.0, aspect, 0.1, 1000.0);
-        auto lookAt = vsg::LookAt::create(vsg::dvec3(0.0, -120.0, 40.0), vsg::dvec3(0.0, 0.0, 0.0), vsg::dvec3(0.0, 0.0, 1.0));
+        auto perspective = vsg::Perspective::create(60.0, aspect, 0.1, 2000.0);
+        auto lookAt = vsg::LookAt::create(vsg::dvec3(0.0, -220.0, 80.0), vsg::dvec3(0.0, 0.0, 0.0), vsg::dvec3(0.0, 0.0, 1.0));
         auto camera = vsg::Camera::create(perspective, lookAt, vsg::ViewportState::create(window->extent2D()));
 
         auto commandGraph = vsg::CommandGraph::create(window);
@@ -365,6 +373,9 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
             viewer->recordAndSubmit();
             viewer->present();
         }
+
+        profiler->finish();
+        appState->ui.gpuFrameMs = static_cast<float>(latestVsgGpuFrameMs(*profiler));
 
         const uint64_t triangles = appState->cube.triangles();
         const uint64_t vertices = appState->cube.vertices();

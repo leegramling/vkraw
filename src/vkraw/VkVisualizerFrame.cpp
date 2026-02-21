@@ -20,7 +20,7 @@ void VkVisualizerApp::processInput(float deltaSeconds) {
 void VkVisualizerApp::updateUniformBuffer() {
     UniformBufferObject ubo{};
 
-    const glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 120.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    const glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 220.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     glm::mat4 projection =
         glm::perspective(glm::radians(60.0f), context_.swapchain.extent.width / static_cast<float>(context_.swapchain.extent.height), 0.1f, 2000.0f);
     projection[1][1] *= -1.0f;
