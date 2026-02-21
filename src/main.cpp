@@ -168,7 +168,7 @@ class App {
     float yaw_ = 30.0f;
     float pitch_ = 20.0f;
     float autoSpinSpeedDeg_ = 22.5f;
-    int cubeCount_ = 1;
+    int cubeCount_ = 4096;
     float fps_ = 0.0f;
     bool showDemoWindow_ = true;
     std::vector<glm::vec3> cubeOffsets_;
@@ -851,7 +851,7 @@ class App {
     void updateUniformBuffer() {
         UniformBufferObject ubo{};
 
-        const glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        const glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 120.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         glm::mat4 projection =
             glm::perspective(glm::radians(60.0f), swapchain_.extent.width / static_cast<float>(swapchain_.extent.height), 0.1f, 100.0f);
         projection[1][1] *= -1.0f;
@@ -987,7 +987,7 @@ class App {
         ImGui::SliderFloat("Yaw", &yaw_, -180.0f, 180.0f);
         ImGui::SliderFloat("Pitch", &pitch_, -89.0f, 89.0f);
         ImGui::SliderFloat("Auto spin (deg/s)", &autoSpinSpeedDeg_, -180.0f, 180.0f);
-        if (ImGui::SliderInt("Cube count", &cubeCount_, 1, 4096)) {
+        if (ImGui::SliderInt("Cube count", &cubeCount_, 1, 20000)) {
             rebuildCubeOffsets();
         }
         fps_ = (deltaSeconds > 0.0f) ? (1.0f / deltaSeconds) : 0.0f;

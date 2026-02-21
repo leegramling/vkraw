@@ -14,7 +14,7 @@ struct UiState : public vsg::Inherit<vsg::Object, UiState>
     float yaw = 30.0f;
     float pitch = 20.0f;
     float autoSpinDegPerSec = 22.5f;
-    int cubeCount = 1;
+    int cubeCount = 4096;
     bool showDemoWindow = true;
     float deltaTimeMs = 0.0f;
     float fps = 0.0f;
@@ -84,7 +84,7 @@ public:
         ImGui::SliderFloat("Yaw", &uiState->yaw, -180.0f, 180.0f);
         ImGui::SliderFloat("Pitch", &uiState->pitch, -89.0f, 89.0f);
         ImGui::SliderFloat("Auto spin (deg/s)", &uiState->autoSpinDegPerSec, -180.0f, 180.0f);
-        ImGui::SliderInt("Cube count", &uiState->cubeCount, 1, 4096);
+        ImGui::SliderInt("Cube count", &uiState->cubeCount, 1, 20000);
         ImGui::Text("FPS %.1f", uiState->fps);
         ImGui::Text("Frame time %.3f ms", uiState->deltaTimeMs);
         ImGui::End();
@@ -266,7 +266,7 @@ int main(int argc, char** argv)
 
         const double aspect = static_cast<double>(window->extent2D().width) / static_cast<double>(window->extent2D().height);
         auto perspective = vsg::Perspective::create(45.0, aspect, 0.1, 1000.0);
-        auto lookAt = vsg::LookAt::create(vsg::dvec3(0.0, -12.0, 4.0), vsg::dvec3(0.0, 0.0, 0.0), vsg::dvec3(0.0, 0.0, 1.0));
+        auto lookAt = vsg::LookAt::create(vsg::dvec3(0.0, -120.0, 40.0), vsg::dvec3(0.0, 0.0, 0.0), vsg::dvec3(0.0, 0.0, 1.0));
         auto camera = vsg::Camera::create(perspective, lookAt, vsg::ViewportState::create(window->extent2D()));
 
         auto commandGraph = vsg::CommandGraph::create(window);
