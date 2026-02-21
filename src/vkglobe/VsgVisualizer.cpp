@@ -484,8 +484,8 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         std::string earthTexturePath;
         bool osmEnabled = false;
         std::string osmCachePath = "cache/osm";
-        double osmEnableAltFt = 800.0;
-        double osmDisableAltFt = 1200.0;
+        double osmEnableAltFt = 10000.0;
+        double osmDisableAltFt = 15000.0;
         int osmMaxZoom = 19;
         arguments.read("--seconds", runDurationSeconds);
         arguments.read("--duration", runDurationSeconds);

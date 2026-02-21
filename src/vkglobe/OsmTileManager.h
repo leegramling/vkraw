@@ -37,8 +37,8 @@ public:
         int maxFetchPerFrame = 4;
         int minZoom = 1;
         int maxZoom = 19;
-        double enableAltitudeFt = 800.0;
-        double disableAltitudeFt = 1200.0;
+        double enableAltitudeFt = 10000.0;
+        double disableAltitudeFt = 15000.0;
     };
 
     static vsg::ref_ptr<OsmTileManager> create(vsg::ref_ptr<vsg::Options> options, Config cfg)
