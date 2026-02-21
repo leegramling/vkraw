@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cmath>
 #include <iostream>
 #include <vector>
@@ -18,6 +19,8 @@ struct UiState : public vsg::Inherit<vsg::Object, UiState>
     bool showDemoWindow = true;
     float deltaTimeMs = 0.0f;
     float fps = 0.0f;
+    float gpuFrameMs = 0.0f;
+    const char* presentModeName = "IMMEDIATE (requested)";
 };
 
 class RotationInputHandler : public vsg::Inherit<vsg::Visitor, RotationInputHandler>
@@ -87,6 +90,8 @@ public:
         ImGui::SliderInt("Cube count", &uiState->cubeCount, 1, 20000);
         ImGui::Text("FPS %.1f", uiState->fps);
         ImGui::Text("Frame time %.3f ms", uiState->deltaTimeMs);
+        ImGui::Text("Present mode %s", uiState->presentModeName);
+        ImGui::Text("GPU frame %.3f ms", uiState->gpuFrameMs);
         ImGui::End();
 
         ImGui::ShowDemoWindow(&uiState->showDemoWindow);
@@ -229,6 +234,34 @@ void rebuildCubeInstances(vsg::Group& targetGroup, const vsg::ref_ptr<vsg::Node>
     }
 }
 
+double latestVsgGpuFrameMs(const vsg::Profiler& profiler)
+{
+    if (!profiler.log || profiler.log->frameIndices.empty())
+    {
+        return 0.0;
+    }
+
+    uint64_t begin = profiler.log->frameIndices.back();
+    uint64_t end = profiler.log->entry(begin).reference;
+    if (begin > end) std::swap(begin, end);
+
+    double totalMs = 0.0;
+    for (uint64_t i = begin; i <= end; ++i)
+    {
+        auto& entry = profiler.log->entry(i);
+        if (!entry.enter || entry.type != vsg::ProfileLog::COMMAND_BUFFER) continue;
+
+        auto& pair = profiler.log->entry(entry.reference);
+        if (entry.gpuTime == 0 || pair.gpuTime == 0) continue;
+
+        const uint64_t minTime = std::min(entry.gpuTime, pair.gpuTime);
+        const uint64_t maxTime = std::max(entry.gpuTime, pair.gpuTime);
+        totalMs += static_cast<double>(maxTime - minTime) * profiler.log->timestampScaleToMilliseconds;
+    }
+
+    return totalMs;
+}
+
 int main(int argc, char** argv)
 {
     try
@@ -239,6 +272,7 @@ int main(int argc, char** argv)
         windowTraits->windowTitle = "vkvsg";
         windowTraits->width = 1280;
         windowTraits->height = 720;
+        windowTraits->swapchainPreferences.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
 
         if (arguments.errors()) return arguments.writeErrorMessages(std::cerr);
 
@@ -290,6 +324,12 @@ int main(int argc, char** argv)
 
         auto inputHandler = RotationInputHandler::create(uiState);
 
+        auto profilerSettings = vsg::Profiler::Settings::create();
+        profilerSettings->cpu_instrumentation_level = 0;
+        profilerSettings->gpu_instrumentation_level = 1;
+        auto profiler = vsg::Profiler::create(profilerSettings);
+        viewer->assignInstrumentation(profiler);
+
         viewer->addEventHandler(vsgImGui::SendEventsToImGui::create());
         viewer->addEventHandler(vsg::CloseHandler::create(viewer));
         viewer->addEventHandler(inputHandler);
@@ -312,6 +352,7 @@ int main(int argc, char** argv)
             inputHandler->update(delta);
             uiState->deltaTimeMs = 1000.0f * delta;
             uiState->fps = (delta > 0.0f) ? (1.0f / delta) : 0.0f;
+            uiState->gpuFrameMs = static_cast<float>(latestVsgGpuFrameMs(*profiler));
 
             if (uiState->cubeCount != renderedCubeCount)
             {

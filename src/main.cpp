@@ -107,6 +107,21 @@ std::vector<char> readShaderFile(const std::string& filename) {
     return readFile("shaders/" + filename);
 }
 
+const char* presentModeToString(VkPresentModeKHR mode) {
+    switch (mode) {
+        case VK_PRESENT_MODE_IMMEDIATE_KHR:
+            return "IMMEDIATE";
+        case VK_PRESENT_MODE_MAILBOX_KHR:
+            return "MAILBOX";
+        case VK_PRESENT_MODE_FIFO_KHR:
+            return "FIFO";
+        case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
+            return "FIFO_RELAXED";
+        default:
+            return "OTHER";
+    }
+}
+
 class App {
   public:
     void run() {
@@ -172,6 +187,12 @@ class App {
     float fps_ = 0.0f;
     bool showDemoWindow_ = true;
     std::vector<glm::vec3> cubeOffsets_;
+    VkPresentModeKHR selectedPresentMode_ = VK_PRESENT_MODE_FIFO_KHR;
+    VkQueryPool gpuTimestampQueryPool_ = VK_NULL_HANDLE;
+    bool gpuTimestampsSupported_ = false;
+    double timestampPeriodNs_ = 0.0;
+    float gpuFrameMs_ = 0.0f;
+    std::array<bool, kMaxFramesInFlight> gpuQueryValid_{};
 
     static void framebufferResizeCallback(GLFWwindow* window, int, int) {
         auto* app = reinterpret_cast<App*>(glfwGetWindowUserPointer(window));
@@ -214,6 +235,7 @@ class App {
         createDescriptorPool();
         createDescriptorSet();
         createCommandBuffers();
+        createTimestampQueryPool();
         createSyncObjects();
         rebuildCubeOffsets();
         initImGui();
@@ -265,6 +287,11 @@ class App {
             throw std::runtime_error(physRet.error().message());
         }
         physicalDevice_ = physRet.value();
+
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(physicalDevice_.physical_device, &properties);
+        gpuTimestampsSupported_ = properties.limits.timestampComputeAndGraphics == VK_TRUE;
+        timestampPeriodNs_ = static_cast<double>(properties.limits.timestampPeriod);
     }
 
     void createDevice() {
@@ -292,11 +319,18 @@ class App {
         int height = 0;
         glfwGetFramebufferSize(window_, &width, &height);
 
-        vkb::SwapchainBuilder builder(device_);
-        auto swapchainRet = builder.set_desired_extent(static_cast<uint32_t>(width), static_cast<uint32_t>(height))
-                                .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
-                                .set_old_swapchain(swapchain_)
-                                .build();
+        auto buildSwapchainWithMode = [&](VkPresentModeKHR mode) {
+            vkb::SwapchainBuilder builder(device_);
+            return builder.set_desired_extent(static_cast<uint32_t>(width), static_cast<uint32_t>(height))
+                .set_desired_present_mode(mode)
+                .set_old_swapchain(swapchain_)
+                .build();
+        };
+
+        auto swapchainRet = buildSwapchainWithMode(VK_PRESENT_MODE_IMMEDIATE_KHR);
+        if (!swapchainRet) {
+            swapchainRet = buildSwapchainWithMode(VK_PRESENT_MODE_FIFO_KHR);
+        }
 
         if (!swapchainRet) {
             throw std::runtime_error(swapchainRet.error().message());
@@ -307,6 +341,7 @@ class App {
         }
 
         swapchain_ = swapchainRet.value();
+        selectedPresentMode_ = swapchain_.present_mode;
 
         auto imagesRet = swapchain_.get_images();
         auto imageViewsRet = swapchain_.get_image_views();
@@ -678,6 +713,29 @@ class App {
         }
     }
 
+    void createTimestampQueryPool() {
+        if (!gpuTimestampsSupported_) {
+            return;
+        }
+
+        if (gpuTimestampQueryPool_ != VK_NULL_HANDLE) {
+            vkDestroyQueryPool(device_.device, gpuTimestampQueryPool_, nullptr);
+            gpuTimestampQueryPool_ = VK_NULL_HANDLE;
+        }
+
+        VkQueryPoolCreateInfo queryPoolInfo{};
+        queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        queryPoolInfo.queryCount = 2U * static_cast<uint32_t>(kMaxFramesInFlight);
+
+        if (vkCreateQueryPool(device_.device, &queryPoolInfo, nullptr, &gpuTimestampQueryPool_) != VK_SUCCESS) {
+            gpuTimestampsSupported_ = false;
+            return;
+        }
+
+        gpuQueryValid_.fill(false);
+    }
+
     void createSyncObjects() {
         VkSemaphoreCreateInfo semaphoreInfo{};
         semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -853,7 +911,7 @@ class App {
 
         const glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 120.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         glm::mat4 projection =
-            glm::perspective(glm::radians(60.0f), swapchain_.extent.width / static_cast<float>(swapchain_.extent.height), 0.1f, 100.0f);
+            glm::perspective(glm::radians(60.0f), swapchain_.extent.width / static_cast<float>(swapchain_.extent.height), 0.1f, 2000.0f);
         projection[1][1] *= -1.0f;
 
         ubo.viewProj = projection * view;
@@ -868,12 +926,18 @@ class App {
         return model;
     }
 
-    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, float elapsedSeconds) {
+    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, float elapsedSeconds, size_t frameIndex) {
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
         if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("failed to begin command buffer");
+        }
+
+        const uint32_t queryStart = 2U * static_cast<uint32_t>(frameIndex);
+        if (gpuTimestampQueryPool_ != VK_NULL_HANDLE) {
+            vkCmdResetQueryPool(commandBuffer, gpuTimestampQueryPool_, queryStart, 2);
+            vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, gpuTimestampQueryPool_, queryStart);
         }
 
         std::array<VkClearValue, 2> clearValues{};
@@ -911,6 +975,10 @@ class App {
 
         vkCmdEndRenderPass(commandBuffer);
 
+        if (gpuTimestampQueryPool_ != VK_NULL_HANDLE) {
+            vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, gpuTimestampQueryPool_, queryStart + 1);
+        }
+
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer");
         }
@@ -935,6 +1003,7 @@ class App {
         createGraphicsPipeline();
         createFramebuffers();
         createCommandBuffers();
+        createTimestampQueryPool();
 
         ImGui_ImplVulkan_SetMinImageCount(swapchain_.image_count);
         ImGui_ImplVulkan_Shutdown();
@@ -959,6 +1028,24 @@ class App {
 
     void drawFrame(float deltaSeconds, float elapsedSeconds) {
         vkWaitForFences(device_.device, 1, &inFlightFences_[currentFrame_], VK_TRUE, UINT64_MAX);
+
+        if (gpuTimestampQueryPool_ != VK_NULL_HANDLE && gpuQueryValid_[currentFrame_]) {
+            const uint32_t queryStart = 2U * static_cast<uint32_t>(currentFrame_);
+            uint64_t timestamps[2] = {};
+            const VkResult result = vkGetQueryPoolResults(
+                device_.device,
+                gpuTimestampQueryPool_,
+                queryStart,
+                2,
+                sizeof(timestamps),
+                timestamps,
+                sizeof(uint64_t),
+                VK_QUERY_RESULT_64_BIT);
+            if (result == VK_SUCCESS && timestamps[1] >= timestamps[0]) {
+                const double deltaTicks = static_cast<double>(timestamps[1] - timestamps[0]);
+                gpuFrameMs_ = static_cast<float>((deltaTicks * timestampPeriodNs_) * 1e-6);
+            }
+        }
 
         uint32_t imageIndex = 0;
         const VkResult acquireResult =
@@ -993,6 +1080,12 @@ class App {
         fps_ = (deltaSeconds > 0.0f) ? (1.0f / deltaSeconds) : 0.0f;
         ImGui::Text("FPS %.1f", fps_);
         ImGui::Text("Frame time %.3f ms", 1000.0f * deltaSeconds);
+        ImGui::Text("Present mode %s", presentModeToString(selectedPresentMode_));
+        if (gpuTimestampQueryPool_ != VK_NULL_HANDLE) {
+            ImGui::Text("GPU frame %.3f ms", gpuFrameMs_);
+        } else {
+            ImGui::TextUnformatted("GPU frame n/a (timestamps unsupported)");
+        }
         ImGui::End();
 
         ImGui::ShowDemoWindow(&showDemoWindow_);
@@ -1000,7 +1093,8 @@ class App {
         ImGui::Render();
 
         updateUniformBuffer();
-        recordCommandBuffer(commandBuffers_[imageIndex], imageIndex, elapsedSeconds);
+        recordCommandBuffer(commandBuffers_[imageIndex], imageIndex, elapsedSeconds, currentFrame_);
+        gpuQueryValid_[currentFrame_] = (gpuTimestampQueryPool_ != VK_NULL_HANDLE);
 
         VkSemaphore waitSemaphores[] = {imageAvailableSemaphores_[currentFrame_]};
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
@@ -1067,6 +1161,11 @@ class App {
         if (!commandBuffers_.empty()) {
             vkFreeCommandBuffers(device_.device, commandPool_, static_cast<uint32_t>(commandBuffers_.size()), commandBuffers_.data());
             commandBuffers_.clear();
+        }
+
+        if (gpuTimestampQueryPool_ != VK_NULL_HANDLE) {
+            vkDestroyQueryPool(device_.device, gpuTimestampQueryPool_, nullptr);
+            gpuTimestampQueryPool_ = VK_NULL_HANDLE;
         }
 
         if (pipeline_ != VK_NULL_HANDLE) {
