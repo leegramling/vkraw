@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <cstdint>
@@ -53,7 +55,11 @@ struct Vertex {
 };
 
 struct UniformBufferObject {
-    glm::mat4 mvp;
+    glm::mat4 viewProj;
+};
+
+struct PushConstantData {
+    glm::mat4 model;
 };
 
 const std::vector<Vertex> kVertices = {
@@ -162,7 +168,10 @@ class App {
     float yaw_ = 30.0f;
     float pitch_ = 20.0f;
     float autoSpinSpeedDeg_ = 22.5f;
+    int cubeCount_ = 1;
+    float fps_ = 0.0f;
     bool showDemoWindow_ = true;
+    std::vector<glm::vec3> cubeOffsets_;
 
     static void framebufferResizeCallback(GLFWwindow* window, int, int) {
         auto* app = reinterpret_cast<App*>(glfwGetWindowUserPointer(window));
@@ -206,7 +215,29 @@ class App {
         createDescriptorSet();
         createCommandBuffers();
         createSyncObjects();
+        rebuildCubeOffsets();
         initImGui();
+    }
+
+    void rebuildCubeOffsets() {
+        cubeOffsets_.clear();
+        cubeOffsets_.reserve(static_cast<size_t>(cubeCount_));
+
+        const int side = std::max(1, static_cast<int>(std::ceil(std::cbrt(static_cast<float>(cubeCount_)))));
+        const float spacing = 2.8f;
+        const glm::vec3 centerOffset(
+            0.5f * static_cast<float>(side - 1),
+            0.5f * static_cast<float>(side - 1),
+            0.5f * static_cast<float>(side - 1)
+        );
+
+        for (int i = 0; i < cubeCount_; ++i) {
+            const int x = i % side;
+            const int y = (i / side) % side;
+            const int z = i / (side * side);
+            const glm::vec3 gridPos(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z));
+            cubeOffsets_.push_back((gridPos - centerOffset) * spacing);
+        }
     }
 
     void createInstance() {
@@ -432,7 +463,7 @@ class App {
         rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth = 1.0f;
-        rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+        rasterizer.cullMode = VK_CULL_MODE_NONE;
         rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
 
         VkPipelineMultisampleStateCreateInfo multisampling{};
@@ -458,6 +489,12 @@ class App {
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.setLayoutCount = 1;
         pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout_;
+        VkPushConstantRange pushConstantRange{};
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        pushConstantRange.offset = 0;
+        pushConstantRange.size = sizeof(PushConstantData);
+        pipelineLayoutInfo.pushConstantRangeCount = 1;
+        pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
         if (vkCreatePipelineLayout(device_.device, &pipelineLayoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
             throw std::runtime_error("failed to create pipeline layout");
@@ -811,25 +848,27 @@ class App {
         }
     }
 
-    void updateUniformBuffer(float elapsedSeconds) {
+    void updateUniformBuffer() {
         UniformBufferObject ubo{};
-
-        const float autoYaw = yaw_ + autoSpinSpeedDeg_ * elapsedSeconds;
-
-        glm::mat4 model(1.0f);
-        model = glm::rotate(model, glm::radians(pitch_), glm::vec3(1.0f, 0.0f, 0.0f));
-        model = glm::rotate(model, glm::radians(autoYaw), glm::vec3(0.0f, 1.0f, 0.0f));
 
         const glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         glm::mat4 projection =
             glm::perspective(glm::radians(60.0f), swapchain_.extent.width / static_cast<float>(swapchain_.extent.height), 0.1f, 100.0f);
         projection[1][1] *= -1.0f;
 
-        ubo.mvp = projection * view * model;
+        ubo.viewProj = projection * view;
         uploadToMemory(uniformBufferMemory_, &ubo, sizeof(ubo));
     }
 
-    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+    glm::mat4 computeBaseRotation(float elapsedSeconds) const {
+        const float autoYaw = yaw_ + autoSpinSpeedDeg_ * elapsedSeconds;
+        glm::mat4 model(1.0f);
+        model = glm::rotate(model, glm::radians(pitch_), glm::vec3(1.0f, 0.0f, 0.0f));
+        model = glm::rotate(model, glm::radians(autoYaw), glm::vec3(0.0f, 1.0f, 0.0f));
+        return model;
+    }
+
+    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, float elapsedSeconds) {
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
@@ -859,7 +898,14 @@ class App {
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(commandBuffer, indexBuffer_, 0, VK_INDEX_TYPE_UINT16);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1, &descriptorSet_, 0, nullptr);
-        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(kIndices.size()), 1, 0, 0, 0);
+
+        const glm::mat4 baseRotation = computeBaseRotation(elapsedSeconds);
+        for (const glm::vec3& offset : cubeOffsets_) {
+            PushConstantData push{};
+            push.model = glm::translate(baseRotation, offset);
+            vkCmdPushConstants(commandBuffer, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstantData), &push);
+            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(kIndices.size()), 1, 0, 0, 0);
+        }
 
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 
@@ -941,6 +987,11 @@ class App {
         ImGui::SliderFloat("Yaw", &yaw_, -180.0f, 180.0f);
         ImGui::SliderFloat("Pitch", &pitch_, -89.0f, 89.0f);
         ImGui::SliderFloat("Auto spin (deg/s)", &autoSpinSpeedDeg_, -180.0f, 180.0f);
+        if (ImGui::SliderInt("Cube count", &cubeCount_, 1, 4096)) {
+            rebuildCubeOffsets();
+        }
+        fps_ = (deltaSeconds > 0.0f) ? (1.0f / deltaSeconds) : 0.0f;
+        ImGui::Text("FPS %.1f", fps_);
         ImGui::Text("Frame time %.3f ms", 1000.0f * deltaSeconds);
         ImGui::End();
 
@@ -948,8 +999,8 @@ class App {
 
         ImGui::Render();
 
-        updateUniformBuffer(elapsedSeconds);
-        recordCommandBuffer(commandBuffers_[imageIndex], imageIndex);
+        updateUniformBuffer();
+        recordCommandBuffer(commandBuffers_[imageIndex], imageIndex, elapsedSeconds);
 
         VkSemaphore waitSemaphores[] = {imageAvailableSemaphores_[currentFrame_]};
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};

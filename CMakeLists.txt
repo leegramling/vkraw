@@ -24,6 +24,17 @@ add_subdirectory(external/glm)
 
 find_package(Vulkan REQUIRED)
 
+set(VSG_DEPS_INSTALL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../vsg_deps/install" CACHE PATH "Path to prebuilt VSG dependencies install prefix")
+option(VKRAW_BUILD_VKVSG "Build VSG-based renderer target (vkvsg)" ON)
+
+if(VKRAW_BUILD_VKVSG)
+    if(EXISTS "${VSG_DEPS_INSTALL_DIR}")
+        list(APPEND CMAKE_PREFIX_PATH "${VSG_DEPS_INSTALL_DIR}")
+    endif()
+    find_package(vsg CONFIG REQUIRED)
+    find_package(vsgImGui CONFIG REQUIRED)
+endif()
+
 add_library(imgui STATIC
     external/imgui/imgui.cpp
     external/imgui/imgui_demo.cpp
@@ -117,4 +128,20 @@ target_compile_definitions(vkraw PRIVATE VKRAW_SHADER_DIR="${SHADER_OUTPUT_DIR}"
 
 if(WIN32)
     target_compile_definitions(vkraw PRIVATE VK_USE_PLATFORM_WIN32_KHR)
+endif()
+
+if(VKRAW_BUILD_VKVSG)
+    add_executable(vkvsg
+        src/vkvsg.cpp
+    )
+
+    target_link_libraries(vkvsg PRIVATE
+        vsg::vsg
+        vsgImGui::vsgImGui
+    )
+
+    if(WIN32)
+        target_compile_definitions(vkvsg PRIVATE VK_USE_PLATFORM_WIN32_KHR)
+    endif()
+    target_compile_definitions(vkvsg PRIVATE VKVSG_EXAMPLES_DIR="${VSG_DEPS_INSTALL_DIR}/share/vsgExamples")
 endif()

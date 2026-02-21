@@ -38,6 +38,19 @@ if errorlevel 1 (
   exit /b 1
 )
 
+where git >nul 2>&1
+if errorlevel 1 (
+  echo [ERROR] git not found in PATH.
+  exit /b 1
+)
+
+echo [INFO] Syncing submodules...
+git submodule update --init --recursive
+if errorlevel 1 (
+  echo [ERROR] Failed to initialize submodules.
+  exit /b 1
+)
+
 where ninja >nul 2>&1
 if errorlevel 1 (
   set "GEN=-G Visual Studio 17 2022 -A x64"
@@ -54,7 +67,7 @@ if not exist build mkdir build
 cmake -S . -B build %GEN%
 if errorlevel 1 exit /b 1
 
-cmake --build build --parallel %CFG%
+cmake --build build --parallel %CFG% --target vkraw vkvsg
 if errorlevel 1 exit /b 1
 
-echo [OK] Build complete.
+echo [OK] Build complete: vkraw + vkvsg

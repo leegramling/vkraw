@@ -1,12 +1,17 @@
-# vkRaw (vk-bootstrap path)
+# vkRaw Renderers
 
-This is the first renderer path for your comparison setup:
+This repo now has two renderer executables for comparison:
+
+- `vkraw` (vk-bootstrap path)
 - Vulkan bootstrap/init: `vk-bootstrap`
 - Window/input: `GLFW`
 - Math: `GLM`
 - UI: `ImGui` (demo window enabled)
+- `vkvsg` (VSG path)
+- Scene graph + Vulkan backend: `vsg`
+- UI: `vsgImGui` (ImGui demo window enabled)
 
-Current app renders a 3D cube and opens an ImGui demo window.
+Both apps render a 3D cube and open an ImGui demo window.
 
 ## Submodules
 
@@ -50,11 +55,22 @@ cmake -S . -B build-vs -G "Visual Studio 17 2022" -A x64
 cmake --build build-vs --config Release
 ```
 
+For `vkvsg`, CMake looks for VSG deps at:
+
+- `../vsg_deps/install`
+
+Override if needed:
+
+```bash
+cmake -S . -B build -DVSG_DEPS_INSTALL_DIR=path/to/vsg_deps/install
+```
+
 Run from the build directory so shader paths resolve:
 
 ```bash
 cd build
 ./vkraw
+./vkvsg
 ```
 
 ## Controls
@@ -64,6 +80,8 @@ cd build
   - `Yaw`
   - `Pitch`
   - `Auto spin`
+  - `Cube count` (render load)
+  - `FPS`
 - ImGui demo window is shown each frame.
 
 ## Notes
