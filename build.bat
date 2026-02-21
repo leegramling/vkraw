@@ -87,10 +87,15 @@ echo [INFO] Build dir: %BUILD_DIR%
 
 if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 
-cmake -S . -B "%BUILD_DIR%" %GEN% %TYPE_ARG%
+set "EXTRA_CMAKE_ARGS="
+if /I "%OS%"=="Windows_NT" (
+  set "EXTRA_CMAKE_ARGS=-DVKRAW_USE_SYSTEM_IMAGE_LIBS=OFF"
+)
+
+cmake -S . -B "%BUILD_DIR%" %GEN% %TYPE_ARG% %EXTRA_CMAKE_ARGS%
 if errorlevel 1 exit /b 1
 
-cmake --build "%BUILD_DIR%" --parallel %CFG% --target vkraw vkvsg
+cmake --build "%BUILD_DIR%" --parallel %CFG% --target vkraw vkvsg vkglobe
 if errorlevel 1 exit /b 1
 
-echo [OK] Build complete: vkraw + vkvsg
+echo [OK] Build complete: vkraw + vkvsg + vkglobe

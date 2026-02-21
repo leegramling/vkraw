@@ -27,9 +27,24 @@ add_subdirectory(external/glfw)
 add_subdirectory(external/glm)
 
 find_package(Vulkan REQUIRED)
-find_package(JPEG REQUIRED)
-find_package(PNG REQUIRED)
-find_package(TIFF REQUIRED)
+
+set(_VKRAW_USE_SYSTEM_IMAGE_LIBS_DEFAULT ON)
+if(WIN32)
+    set(_VKRAW_USE_SYSTEM_IMAGE_LIBS_DEFAULT OFF)
+endif()
+option(VKRAW_USE_SYSTEM_IMAGE_LIBS "Enable JPEG/PNG/TIFF file texture decoding in vkraw via system libraries" ${_VKRAW_USE_SYSTEM_IMAGE_LIBS_DEFAULT})
+
+set(VKRAW_HAS_SYSTEM_IMAGE_LIBS OFF)
+if(VKRAW_USE_SYSTEM_IMAGE_LIBS)
+    find_package(JPEG QUIET)
+    find_package(PNG QUIET)
+    find_package(TIFF QUIET)
+    if(JPEG_FOUND AND PNG_FOUND AND TIFF_FOUND)
+        set(VKRAW_HAS_SYSTEM_IMAGE_LIBS ON)
+    else()
+        message(WARNING "JPEG/PNG/TIFF libraries not all found. vkraw file texture loading (.jpg/.png/.tif) will be disabled; procedural fallback remains enabled.")
+    endif()
+endif()
 
 set(VSG_DEPS_INSTALL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../vsg_deps/install" CACHE PATH "Path to prebuilt VSG dependencies install prefix")
 option(VKRAW_BUILD_VKVSG "Build VSG-based renderer target (vkvsg)" ON)
@@ -137,11 +152,13 @@ target_link_libraries(vkraw PRIVATE
     glfw
     glm::glm
     imgui
-    JPEG::JPEG
-    PNG::PNG
-    TIFF::TIFF
     Vulkan::Vulkan
 )
+
+if(VKRAW_HAS_SYSTEM_IMAGE_LIBS)
+    target_link_libraries(vkraw PRIVATE JPEG::JPEG PNG::PNG TIFF::TIFF)
+    target_compile_definitions(vkraw PRIVATE VKRAW_ENABLE_IMAGE_FILE_IO=1)
+endif()
 
 target_compile_definitions(vkraw PRIVATE GLFW_INCLUDE_NONE)
 target_compile_definitions(vkraw PRIVATE VKRAW_SHADER_DIR="${SHADER_OUTPUT_DIR}")
@@ -172,4 +189,26 @@ if(VKRAW_BUILD_VKVSG)
         target_compile_definitions(vkvsg PRIVATE VK_USE_PLATFORM_WIN32_KHR)
     endif()
     target_compile_definitions(vkvsg PRIVATE VKVSG_EXAMPLES_DIR="${VSG_DEPS_INSTALL_DIR}/share/vsgExamples")
+
+    add_executable(vkglobe
+        src/vkglobe/main.cpp
+        src/vkglobe/VsgVisualizer.cpp
+    )
+
+    target_include_directories(vkglobe PRIVATE src)
+
+    target_link_libraries(vkglobe PRIVATE
+        vsg::vsg
+        vsgImGui::vsgImGui
+    )
+
+    if(vsgXchange_FOUND)
+        target_link_libraries(vkglobe PRIVATE vsgXchange::vsgXchange)
+        target_compile_definitions(vkglobe PRIVATE VKVSG_HAS_VSGXCHANGE)
+    endif()
+
+    if(WIN32)
+        target_compile_definitions(vkglobe PRIVATE VK_USE_PLATFORM_WIN32_KHR)
+    endif()
+    target_compile_definitions(vkglobe PRIVATE VKVSG_EXAMPLES_DIR="${VSG_DEPS_INSTALL_DIR}/share/vsgExamples")
 endif()

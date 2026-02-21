@@ -5,9 +5,11 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
+#if defined(VKRAW_ENABLE_IMAGE_FILE_IO)
 #include <jpeglib.h>
 #include <png.h>
 #include <tiffio.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -64,6 +66,7 @@ std::vector<uint8_t> readBinaryFile(const std::string& path)
     return bytes;
 }
 
+#if defined(VKRAW_ENABLE_IMAGE_FILE_IO)
 bool decodeJpeg(const std::string& path, LoadedImage& out)
 {
     const std::vector<uint8_t> bytes = readBinaryFile(path);
@@ -199,10 +202,15 @@ bool decodeTiff(const std::string& path, LoadedImage& out)
     }
     return true;
 }
+#endif
 
 bool loadTextureFromFile(const std::string& path, LoadedImage& out)
 {
     if (path.empty()) return false;
+#if !defined(VKRAW_ENABLE_IMAGE_FILE_IO)
+    (void)out;
+    return false;
+#else
     const std::string ext = std::filesystem::path(path).extension().string();
     std::string lowerExt = ext;
     std::transform(lowerExt.begin(), lowerExt.end(), lowerExt.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -211,6 +219,7 @@ bool loadTextureFromFile(const std::string& path, LoadedImage& out)
     if (lowerExt == ".png") return decodePng(path, out);
     if (lowerExt == ".tif" || lowerExt == ".tiff") return decodeTiff(path, out);
     return false;
+#endif
 }
 
 std::vector<uint8_t> makeProceduralEarthTexture(uint32_t width, uint32_t height)
@@ -329,8 +338,12 @@ void VkVisualizerApp::createTextureResources() {
     textureSourceLabel_ = "procedural";
     if (!textureLoadedFromFile_) {
         if (!earthTexturePath_.empty()) {
+#if !defined(VKRAW_ENABLE_IMAGE_FILE_IO)
+            std::cerr << "Earth file texture loading is disabled in this build (missing JPEG/PNG/TIFF libs), using procedural fallback texture.\n";
+#else
             std::cerr << "Failed to load earth texture at '" << earthTexturePath_
                       << "' (supported formats: .jpg/.jpeg/.png/.tif/.tiff), using procedural fallback texture.\n";
+#endif
         }
         constexpr uint32_t kTextureWidth = 1024;
         constexpr uint32_t kTextureHeight = 512;
