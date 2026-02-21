@@ -193,6 +193,9 @@ class App {
     double timestampPeriodNs_ = 0.0;
     float gpuFrameMs_ = 0.0f;
     std::array<bool, kMaxFramesInFlight> gpuQueryValid_{};
+    uint64_t frameCount_ = 0;
+    float runSeconds_ = 0.0f;
+    float cpuFrameMs_ = 0.0f;
 
     static void framebufferResizeCallback(GLFWwindow* window, int, int) {
         auto* app = reinterpret_cast<App*>(glfwGetWindowUserPointer(window));
@@ -239,6 +242,11 @@ class App {
         createSyncObjects();
         rebuildCubeOffsets();
         initImGui();
+
+        std::cout << "[START] vkraw cubes=" << cubeCount_
+                  << " present_mode=" << presentModeToString(selectedPresentMode_)
+                  << " timestamps=" << (gpuTimestampQueryPool_ != VK_NULL_HANDLE ? "on" : "off")
+                  << std::endl;
     }
 
     void rebuildCubeOffsets() {
@@ -1145,11 +1153,23 @@ class App {
             const float deltaSeconds = std::chrono::duration<float>(now - last).count();
             const float elapsedSeconds = std::chrono::duration<float>(now - start).count();
             last = now;
+            ++frameCount_;
+            runSeconds_ = elapsedSeconds;
+            cpuFrameMs_ = 1000.0f * deltaSeconds;
 
             drawFrame(deltaSeconds, elapsedSeconds);
         }
 
         vkDeviceWaitIdle(device_.device);
+        std::cout << "[EXIT] vkraw status=OK code=0"
+                  << " frames=" << frameCount_
+                  << " seconds=" << runSeconds_
+                  << " cubes=" << cubeCount_
+                  << " fps=" << fps_
+                  << " cpu_ms=" << cpuFrameMs_
+                  << " gpu_ms=" << gpuFrameMs_
+                  << " present_mode=" << presentModeToString(selectedPresentMode_)
+                  << std::endl;
     }
 
     void cleanupSwapchain() {
@@ -1281,6 +1301,7 @@ int main() {
         App app;
         app.run();
     } catch (const std::exception& e) {
+        std::cout << "[EXIT] vkraw status=FAIL code=1 reason=\"" << e.what() << "\"" << std::endl;
         std::cerr << "error: " << e.what() << '\n';
         return EXIT_FAILURE;
     }

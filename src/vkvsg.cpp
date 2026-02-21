@@ -314,6 +314,13 @@ int main(int argc, char** argv)
         auto uiState = UiState::create();
         rebuildCubeInstances(*cubesGroup, cubeNode, uiState->cubeCount);
         int renderedCubeCount = uiState->cubeCount;
+        uint64_t frameCount = 0;
+        float runSeconds = 0.0f;
+        float cpuFrameMs = 0.0f;
+
+        std::cout << "[START] vkvsg cubes=" << uiState->cubeCount
+                  << " present_mode=" << uiState->presentModeName
+                  << " gpu_profiler=on" << std::endl;
 
         auto renderImGui = vsgImGui::RenderImGui::create(window, CubeGui::create(uiState));
         renderGraph->addChild(renderImGui);
@@ -346,6 +353,9 @@ int main(int argc, char** argv)
             const float delta = std::chrono::duration<float>(now - last).count();
             const float elapsed = std::chrono::duration<float>(now - start).count();
             last = now;
+            ++frameCount;
+            runSeconds = elapsed;
+            cpuFrameMs = 1000.0f * delta;
 
             viewer->handleEvents();
 
@@ -368,14 +378,26 @@ int main(int argc, char** argv)
             viewer->recordAndSubmit();
             viewer->present();
         }
+
+        std::cout << "[EXIT] vkvsg status=OK code=0"
+                  << " frames=" << frameCount
+                  << " seconds=" << runSeconds
+                  << " cubes=" << uiState->cubeCount
+                  << " fps=" << uiState->fps
+                  << " cpu_ms=" << cpuFrameMs
+                  << " gpu_ms=" << uiState->gpuFrameMs
+                  << " present_mode=" << uiState->presentModeName
+                  << std::endl;
     }
     catch (const vsg::Exception& e)
     {
+        std::cout << "[EXIT] vkvsg status=FAIL code=1 reason=\"" << e.message << "\"" << std::endl;
         std::cerr << "[vsg::Exception] " << e.message << std::endl;
         return 1;
     }
     catch (const std::exception& e)
     {
+        std::cout << "[EXIT] vkvsg status=FAIL code=1 reason=\"" << e.what() << "\"" << std::endl;
         std::cerr << "[Exception] " << e.what() << std::endl;
         return 1;
     }
