@@ -9,6 +9,7 @@ namespace vkvsg {
 class UIObject {
 public:
     bool showDemoWindow = true;
+    bool batchedMesh = false;
     float deltaTimeMs = 0.0f;
     float fps = 0.0f;
     float gpuFrameMs = 0.0f;
@@ -21,6 +22,7 @@ public:
         ImGui::SliderFloat("Yaw", &cube.yaw, -180.0f, 180.0f);
         ImGui::SliderFloat("Pitch", &cube.pitch, -89.0f, 89.0f);
         ImGui::SliderFloat("Auto spin (deg/s)", &cube.autoSpinDegPerSec, -180.0f, 180.0f);
+        ImGui::Checkbox("Batched mesh", &batchedMesh);
         const bool changedCount = ImGui::SliderInt("Cube count", &cube.cubeCount, 20000, 100000);
         ImGui::Text("FPS %.1f", fps);
         ImGui::Text("Frame time %.3f ms", deltaTimeMs);

@@ -103,7 +103,7 @@ vsg::ref_ptr<vsg::Data> createCheckerTexture()
     return tex;
 }
 
-vsg::ref_ptr<vsg::Node> createCubePrototype()
+vsg::ref_ptr<vsg::Node> createCubeNode(int cubeCount, bool batched)
 {
     auto searchPaths = shaderSearchPaths();
 
@@ -152,34 +152,70 @@ vsg::ref_ptr<vsg::Node> createCubePrototype()
     auto texture = vsg::DescriptorImage::create(vsg::Sampler::create(), createCheckerTexture(), 0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     auto descriptorSet = vsg::DescriptorSet::create(descriptorSetLayout, vsg::Descriptors{texture});
 
-    auto vertices = vsg::vec3Array::create({
+    const std::array<vsg::vec3, 8> baseVertices{{
         {-0.5f, -0.5f, 0.5f}, {0.5f, -0.5f, 0.5f}, {0.5f, 0.5f, 0.5f}, {-0.5f, 0.5f, 0.5f},
         {-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f}, {0.5f, 0.5f, -0.5f}, {-0.5f, 0.5f, -0.5f}
-    });
-
-    auto colors = vsg::vec3Array::create({
+    }};
+    const std::array<vsg::vec3, 8> baseColors{{
         {1.0f, 0.2f, 0.2f}, {0.2f, 1.0f, 0.2f}, {0.2f, 0.2f, 1.0f}, {1.0f, 1.0f, 0.2f},
         {1.0f, 0.2f, 1.0f}, {0.2f, 1.0f, 1.0f}, {0.9f, 0.9f, 0.9f}, {0.5f, 0.5f, 0.9f}
-    });
-
-    auto texcoords = vsg::vec2Array::create({
+    }};
+    const std::array<vsg::vec2, 8> baseTexcoords{{
         {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f},
         {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}
-    });
-
-    auto indices = vsg::ushortArray::create({
+    }};
+    const std::array<uint32_t, 36> baseIndices{{
         0, 1, 2, 2, 3, 0,
         4, 5, 6, 6, 7, 4,
         0, 4, 7, 7, 3, 0,
         1, 5, 6, 6, 2, 1,
         3, 2, 6, 6, 7, 3,
         0, 1, 5, 5, 4, 0,
-    });
+    }};
+
+    const int meshCubeCount = batched ? cubeCount : 1;
+    const size_t totalVertices = static_cast<size_t>(meshCubeCount) * baseVertices.size();
+    const size_t totalIndices = static_cast<size_t>(meshCubeCount) * baseIndices.size();
+    auto vertices = vsg::vec3Array::create(static_cast<uint32_t>(totalVertices));
+    auto colors = vsg::vec3Array::create(static_cast<uint32_t>(totalVertices));
+    auto texcoords = vsg::vec2Array::create(static_cast<uint32_t>(totalVertices));
+    auto indices = vsg::uintArray::create(static_cast<uint32_t>(totalIndices));
+
+    const int side = std::max(1, static_cast<int>(std::ceil(std::cbrt(static_cast<float>(meshCubeCount)))));
+    const double spacing = 2.8;
+    const vsg::dvec3 centerOffset(
+        0.5 * static_cast<double>(side - 1),
+        0.5 * static_cast<double>(side - 1),
+        0.5 * static_cast<double>(side - 1));
+
+    size_t vertexWrite = 0;
+    size_t indexWrite = 0;
+    for (int i = 0; i < meshCubeCount; ++i)
+    {
+        const int x = i % side;
+        const int y = (i / side) % side;
+        const int z = i / (side * side);
+        const vsg::dvec3 gridPos(static_cast<double>(x), static_cast<double>(y), static_cast<double>(z));
+        const vsg::vec3 offset = vsg::vec3((gridPos - centerOffset) * spacing);
+
+        const uint32_t base = static_cast<uint32_t>(vertexWrite);
+        for (size_t v = 0; v < baseVertices.size(); ++v)
+        {
+            (*vertices)[vertexWrite] = baseVertices[v] + offset;
+            (*colors)[vertexWrite] = baseColors[v];
+            (*texcoords)[vertexWrite] = baseTexcoords[v];
+            ++vertexWrite;
+        }
+        for (uint32_t idx : baseIndices)
+        {
+            (*indices)[indexWrite++] = base + idx;
+        }
+    }
 
     auto geometry = vsg::Geometry::create();
     geometry->assignArrays(vsg::DataList{vertices, colors, texcoords});
     geometry->assignIndices(indices);
-    geometry->commands.push_back(vsg::DrawIndexed::create(36, 1, 0, 0, 0));
+    geometry->commands.push_back(vsg::DrawIndexed::create(static_cast<uint32_t>(indices->size()), 1, 0, 0, 0));
 
     auto stateGroup = vsg::StateGroup::create();
     stateGroup->add(vsg::BindGraphicsPipeline::create(graphicsPipeline));
@@ -277,8 +313,8 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
         }
         viewer->addWindow(window);
 
-        auto cubeNode = createCubePrototype();
-        if (!cubeNode)
+        auto prototypeNode = createCubeNode(1, false);
+        if (!prototypeNode)
         {
             return 1;
         }
@@ -304,14 +340,26 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
         renderGraph->addChild(view);
 
         auto appState = AppState::create();
-        rebuildCubeInstances(*cubesGroup, cubeNode, appState->cube.cubeCount);
+        appState->ui.batchedMesh = arguments.read("--batched");
+        if (appState->ui.batchedMesh)
+        {
+            auto batchedNode = createCubeNode(appState->cube.cubeCount, true);
+            if (!batchedNode) return 1;
+            cubesGroup->addChild(batchedNode);
+        }
+        else
+        {
+            rebuildCubeInstances(*cubesGroup, prototypeNode, appState->cube.cubeCount);
+        }
         int renderedCubeCount = appState->cube.cubeCount;
+        bool renderedBatched = appState->ui.batchedMesh;
         uint64_t frameCount = 0;
         float runSeconds = 0.0f;
         float cpuFrameMs = 0.0f;
 
         std::cout << "[START] vkvsg cubes=" << appState->cube.cubeCount
                   << " present_mode=" << appState->ui.presentModeName
+                  << " mesh_mode=" << (appState->ui.batchedMesh ? "batched" : "scenegraph")
                   << " gpu_profiler=on" << std::endl;
 
         auto renderImGui = vsgImGui::RenderImGui::create(window, CubeGui::create(appState));
@@ -361,10 +409,21 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
             appState->ui.fps = (delta > 0.0f) ? (1.0f / delta) : 0.0f;
             appState->ui.gpuFrameMs = static_cast<float>(latestVsgGpuFrameMs(*profiler));
 
-            if (appState->cube.cubeCount != renderedCubeCount)
+            if (appState->cube.cubeCount != renderedCubeCount || appState->ui.batchedMesh != renderedBatched)
             {
                 renderedCubeCount = appState->cube.cubeCount;
-                rebuildCubeInstances(*cubesGroup, cubeNode, renderedCubeCount);
+                renderedBatched = appState->ui.batchedMesh;
+                cubesGroup->children.clear();
+                if (renderedBatched)
+                {
+                    auto batchedNode = createCubeNode(renderedCubeCount, true);
+                    if (!batchedNode) return 1;
+                    cubesGroup->addChild(batchedNode);
+                }
+                else
+                {
+                    rebuildCubeInstances(*cubesGroup, prototypeNode, renderedCubeCount);
+                }
             }
 
             cubeTransform->matrix = appState->cube.computeRotation(elapsed);
@@ -388,6 +447,7 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
                   << " fps=" << appState->ui.fps
                   << " cpu_ms=" << cpuFrameMs
                   << " gpu_ms=" << appState->ui.gpuFrameMs
+                  << " mesh_mode=" << (appState->ui.batchedMesh ? "batched" : "scenegraph")
                   << " present_mode=" << appState->ui.presentModeName
                   << std::endl;
     }
