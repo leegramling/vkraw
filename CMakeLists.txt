@@ -191,6 +191,7 @@ if(VKRAW_BUILD_VKVSG)
     add_executable(vkglobe
         src/vkglobe/main.cpp
         src/vkglobe/VsgVisualizer.cpp
+        src/vkglobe/GlobeTileLayer.cpp
         src/vkglobe/OsmProjection.cpp
         src/vkglobe/OsmTileFetcher.cpp
         src/vkglobe/OsmTileManager.cpp

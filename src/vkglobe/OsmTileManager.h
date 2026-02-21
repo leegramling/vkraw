@@ -1,12 +1,14 @@
 #pragma once
 
 #include <vsg/core/Inherit.h>
+#include <vsg/core/Data.h>
 #include <vsg/core/Object.h>
 #include <vsg/io/Options.h>
 
 #include <filesystem>
 #include <map>
 #include <set>
+#include <vector>
 
 namespace vkglobe {
 
@@ -23,6 +25,7 @@ struct TileEntry
 {
     bool fetched = false;
     bool loaded = false;
+    vsg::ref_ptr<vsg::Data> image;
 };
 
 class OsmTileManager : public vsg::Inherit<vsg::Object, OsmTileManager>
@@ -58,6 +61,7 @@ public:
     double currentAltitudeFt() const { return currentAltitudeFt_; }
     size_t cachedTileCount() const { return tileCache_.size(); }
     size_t visibleTileCount() const { return visibleTiles_.size(); }
+    std::vector<std::pair<TileKey, vsg::ref_ptr<vsg::Data>>> loadedVisibleTiles() const;
 
     void update(const vsg::dvec3& eyeWorld, const vsg::dmat4& globeRotation, double equatorialRadiusFt, double polarRadiusFt);
 

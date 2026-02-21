@@ -162,10 +162,24 @@ void OsmTileManager::fetchAndDecodeBudgeted()
 
         auto data = vsg::read_cast<vsg::Data>(cacheFile.string(), options_);
         if (!data) continue;
+        entry.image = data;
         entry.loaded = true;
         ++fetchedThisFrame;
     }
 }
 
-} // namespace vkglobe
+std::vector<std::pair<TileKey, vsg::ref_ptr<vsg::Data>>> OsmTileManager::loadedVisibleTiles() const
+{
+    std::vector<std::pair<TileKey, vsg::ref_ptr<vsg::Data>>> tiles;
+    tiles.reserve(visibleTiles_.size());
+    for (const TileKey& key : visibleTiles_)
+    {
+        auto it = tileCache_.find(key);
+        if (it == tileCache_.end()) continue;
+        if (!it->second.loaded || !it->second.image) continue;
+        tiles.emplace_back(key, it->second.image);
+    }
+    return tiles;
+}
 
+} // namespace vkglobe

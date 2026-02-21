@@ -1,5 +1,6 @@
 #include "vkglobe/VsgVisualizer.h"
 #include "vkglobe/OsmTileManager.h"
+#include "vkglobe/GlobeTileLayer.h"
 #include "vkglobe/UIObject.h"
 
 #include <vsg/all.h>
@@ -523,6 +524,8 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             return 1;
         }
         globeTransform->addChild(globeNode);
+        auto osmTileLayer = GlobeTileLayer::create(kWgs84EquatorialRadiusFeet * 1.0005, kWgs84PolarRadiusFeet * 1.0005);
+        globeTransform->addChild(osmTileLayer->root());
 
         const double radius = kWgs84EquatorialRadiusFeet;
         const double aspect = static_cast<double>(window->extent2D().width) / static_cast<double>(window->extent2D().height);
@@ -629,6 +632,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                     return 1;
                 }
                 globeTransform->addChild(rebuilt);
+                globeTransform->addChild(osmTileLayer->root());
             }
 
             appState->ui.deltaTimeMs = 1000.0f * delta;
@@ -638,6 +642,11 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             if (osmTiles->enabled())
             {
                 osmTiles->update(lookAt->eye, globeTransform->matrix, kWgs84EquatorialRadiusFeet, kWgs84PolarRadiusFeet);
+                const bool tilesChanged = osmTileLayer->syncFromTiles(osmTiles->loadedVisibleTiles());
+                if (tilesChanged)
+                {
+                    viewer->compile();
+                }
                 if ((frameCount % 120) == 0)
                 {
                     std::cout << "[OSM] active=" << (osmTiles->active() ? "yes" : "no")
