@@ -1,3 +1,5 @@
+#include "vkvsg/VsgVisualizer.h"
+
 #include <vsg/all.h>
 #include <vsgImGui/RenderImGui.h>
 #include <vsgImGui/SendEventsToImGui.h>
@@ -88,8 +90,12 @@ public:
         ImGui::SliderFloat("Pitch", &uiState->pitch, -89.0f, 89.0f);
         ImGui::SliderFloat("Auto spin (deg/s)", &uiState->autoSpinDegPerSec, -180.0f, 180.0f);
         ImGui::SliderInt("Cube count", &uiState->cubeCount, 20000, 100000);
+        const uint64_t triangles = static_cast<uint64_t>(uiState->cubeCount) * 12ULL;
+        const uint64_t vertices = static_cast<uint64_t>(uiState->cubeCount) * 8ULL;
         ImGui::Text("FPS %.1f", uiState->fps);
         ImGui::Text("Frame time %.3f ms", uiState->deltaTimeMs);
+        ImGui::Text("Triangles %llu", static_cast<unsigned long long>(triangles));
+        ImGui::Text("Vertices %llu", static_cast<unsigned long long>(vertices));
         ImGui::Text("Present mode %s", uiState->presentModeName);
         ImGui::Text("GPU frame %.3f ms", uiState->gpuFrameMs);
         ImGui::End();
@@ -262,7 +268,7 @@ double latestVsgGpuFrameMs(const vsg::Profiler& profiler)
     return totalMs;
 }
 
-int main(int argc, char** argv)
+int vkvsg::VsgVisualizer::run(int argc, char** argv)
 {
     try
     {
@@ -379,10 +385,14 @@ int main(int argc, char** argv)
             viewer->present();
         }
 
+        const uint64_t triangles = static_cast<uint64_t>(uiState->cubeCount) * 12ULL;
+        const uint64_t vertices = static_cast<uint64_t>(uiState->cubeCount) * 8ULL;
         std::cout << "[EXIT] vkvsg status=OK code=0"
                   << " frames=" << frameCount
                   << " seconds=" << runSeconds
                   << " cubes=" << uiState->cubeCount
+                  << " triangles=" << triangles
+                  << " vertices=" << vertices
                   << " fps=" << uiState->fps
                   << " cpu_ms=" << cpuFrameMs
                   << " gpu_ms=" << uiState->gpuFrameMs

@@ -112,7 +112,8 @@ add_custom_target(shaders ALL
 )
 
 add_executable(vkraw
-    src/main.cpp
+    src/vkraw/main.cpp
+    src/vkraw/VkVisualizer.cpp
 )
 
 add_dependencies(vkraw shaders)
@@ -136,8 +137,11 @@ endif()
 
 if(VKRAW_BUILD_VKVSG)
     add_executable(vkvsg
-        src/vkvsg.cpp
+        src/vkvsg/main.cpp
+        src/vkvsg/VsgVisualizer.cpp
     )
+
+    target_include_directories(vkvsg PRIVATE src)
 
     target_link_libraries(vkvsg PRIVATE
         vsg::vsg

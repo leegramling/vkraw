@@ -1,3 +1,6 @@
+#include "vkraw/VkVisualizer.h"
+#include "vkraw/VkContext.h"
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -25,8 +28,6 @@ namespace {
 
 constexpr uint32_t kWindowWidth = 1280;
 constexpr uint32_t kWindowHeight = 720;
-constexpr int kMaxFramesInFlight = 1;
-
 struct Vertex {
     glm::vec3 pos;
     glm::vec3 color;
@@ -122,7 +123,10 @@ const char* presentModeToString(VkPresentModeKHR mode) {
     }
 }
 
-class App {
+using vkraw::VkContext;
+using vkraw::kMaxFramesInFlight;
+
+class VkVisualizer {
   public:
     void run() {
         initWindow();
@@ -132,53 +136,7 @@ class App {
     }
 
   private:
-    GLFWwindow* window_ = nullptr;
-
-    vkb::Instance instance_{};
-    VkSurfaceKHR surface_ = VK_NULL_HANDLE;
-    vkb::PhysicalDevice physicalDevice_{};
-    vkb::Device device_{};
-    vkb::Swapchain swapchain_{};
-
-    VkQueue graphicsQueue_ = VK_NULL_HANDLE;
-    VkQueue presentQueue_ = VK_NULL_HANDLE;
-    uint32_t graphicsQueueFamily_ = 0;
-
-    std::vector<VkImage> swapchainImages_;
-    std::vector<VkImageView> swapchainImageViews_;
-    std::vector<VkFramebuffer> swapchainFramebuffers_;
-
-    VkRenderPass renderPass_ = VK_NULL_HANDLE;
-    VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
-    VkPipeline pipeline_ = VK_NULL_HANDLE;
-
-    VkCommandPool commandPool_ = VK_NULL_HANDLE;
-    std::vector<VkCommandBuffer> commandBuffers_;
-
-    VkImage depthImage_ = VK_NULL_HANDLE;
-    VkDeviceMemory depthImageMemory_ = VK_NULL_HANDLE;
-    VkImageView depthImageView_ = VK_NULL_HANDLE;
-    VkFormat depthFormat_ = VK_FORMAT_UNDEFINED;
-
-    VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
-    VkDeviceMemory vertexBufferMemory_ = VK_NULL_HANDLE;
-    VkBuffer indexBuffer_ = VK_NULL_HANDLE;
-    VkDeviceMemory indexBufferMemory_ = VK_NULL_HANDLE;
-    VkBuffer uniformBuffer_ = VK_NULL_HANDLE;
-    VkDeviceMemory uniformBufferMemory_ = VK_NULL_HANDLE;
-
-    VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
-    VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
-    VkDescriptorSet descriptorSet_ = VK_NULL_HANDLE;
-
-    VkDescriptorPool imguiDescriptorPool_ = VK_NULL_HANDLE;
-
-    std::array<VkSemaphore, kMaxFramesInFlight> imageAvailableSemaphores_{};
-    std::array<VkSemaphore, kMaxFramesInFlight> renderFinishedSemaphores_{};
-    std::array<VkFence, kMaxFramesInFlight> inFlightFences_{};
-
-    size_t currentFrame_ = 0;
-    bool framebufferResized_ = false;
+    VkContext context_{};
 
     float yaw_ = 30.0f;
     float pitch_ = 20.0f;
@@ -187,19 +145,14 @@ class App {
     float fps_ = 0.0f;
     bool showDemoWindow_ = true;
     std::vector<glm::vec3> cubeOffsets_;
-    VkPresentModeKHR selectedPresentMode_ = VK_PRESENT_MODE_FIFO_KHR;
-    VkQueryPool gpuTimestampQueryPool_ = VK_NULL_HANDLE;
-    bool gpuTimestampsSupported_ = false;
-    double timestampPeriodNs_ = 0.0;
     float gpuFrameMs_ = 0.0f;
-    std::array<bool, kMaxFramesInFlight> gpuQueryValid_{};
     uint64_t frameCount_ = 0;
     float runSeconds_ = 0.0f;
     float cpuFrameMs_ = 0.0f;
 
     static void framebufferResizeCallback(GLFWwindow* window, int, int) {
-        auto* app = reinterpret_cast<App*>(glfwGetWindowUserPointer(window));
-        app->framebufferResized_ = true;
+        auto* app = reinterpret_cast<VkVisualizer*>(glfwGetWindowUserPointer(window));
+        app->context_.framebufferResized = true;
     }
 
     void initWindow() {
@@ -210,14 +163,14 @@ class App {
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-        window_ = glfwCreateWindow(static_cast<int>(kWindowWidth), static_cast<int>(kWindowHeight), "vkRaw - vk-bootstrap", nullptr,
+        context_.window = glfwCreateWindow(static_cast<int>(kWindowWidth), static_cast<int>(kWindowHeight), "vkRaw - vk-bootstrap", nullptr,
                                    nullptr);
-        if (!window_) {
+        if (!context_.window) {
             throw std::runtime_error("failed to create GLFW window");
         }
 
-        glfwSetWindowUserPointer(window_, this);
-        glfwSetFramebufferSizeCallback(window_, framebufferResizeCallback);
+        glfwSetWindowUserPointer(context_.window, this);
+        glfwSetFramebufferSizeCallback(context_.window, framebufferResizeCallback);
     }
 
     void initVulkan() {
@@ -244,8 +197,8 @@ class App {
         initImGui();
 
         std::cout << "[START] vkraw cubes=" << cubeCount_
-                  << " present_mode=" << presentModeToString(selectedPresentMode_)
-                  << " timestamps=" << (gpuTimestampQueryPool_ != VK_NULL_HANDLE ? "on" : "off")
+                  << " present_mode=" << presentModeToString(context_.selectedPresentMode)
+                  << " timestamps=" << (context_.gpuTimestampQueryPool != VK_NULL_HANDLE ? "on" : "off")
                   << std::endl;
     }
 
@@ -280,58 +233,58 @@ class App {
         if (!instanceRet) {
             throw std::runtime_error(instanceRet.error().message());
         }
-        instance_ = instanceRet.value();
+        context_.instance = instanceRet.value();
     }
 
     void createSurface() {
-        if (glfwCreateWindowSurface(instance_.instance, window_, nullptr, &surface_) != VK_SUCCESS) {
+        if (glfwCreateWindowSurface(context_.instance.instance, context_.window, nullptr, &context_.surface) != VK_SUCCESS) {
             throw std::runtime_error("failed to create Vulkan surface");
         }
     }
 
     void pickPhysicalDevice() {
-        auto physRet = vkb::PhysicalDeviceSelector(instance_).set_surface(surface_).select();
+        auto physRet = vkb::PhysicalDeviceSelector(context_.instance).set_surface(context_.surface).select();
         if (!physRet) {
             throw std::runtime_error(physRet.error().message());
         }
-        physicalDevice_ = physRet.value();
+        context_.physicalDevice = physRet.value();
 
         VkPhysicalDeviceProperties properties{};
-        vkGetPhysicalDeviceProperties(physicalDevice_.physical_device, &properties);
-        gpuTimestampsSupported_ = properties.limits.timestampComputeAndGraphics == VK_TRUE;
-        timestampPeriodNs_ = static_cast<double>(properties.limits.timestampPeriod);
+        vkGetPhysicalDeviceProperties(context_.physicalDevice.physical_device, &properties);
+        context_.gpuTimestampsSupported = properties.limits.timestampComputeAndGraphics == VK_TRUE;
+        context_.timestampPeriodNs = static_cast<double>(properties.limits.timestampPeriod);
     }
 
     void createDevice() {
-        auto deviceRet = vkb::DeviceBuilder(physicalDevice_).build();
+        auto deviceRet = vkb::DeviceBuilder(context_.physicalDevice).build();
         if (!deviceRet) {
             throw std::runtime_error(deviceRet.error().message());
         }
-        device_ = deviceRet.value();
+        context_.device = deviceRet.value();
 
-        auto graphicsQueueRet = device_.get_queue(vkb::QueueType::graphics);
-        auto presentQueueRet = device_.get_queue(vkb::QueueType::present);
-        auto graphicsQueueIndexRet = device_.get_queue_index(vkb::QueueType::graphics);
+        auto graphicsQueueRet = context_.device.get_queue(vkb::QueueType::graphics);
+        auto presentQueueRet = context_.device.get_queue(vkb::QueueType::present);
+        auto graphicsQueueIndexRet = context_.device.get_queue_index(vkb::QueueType::graphics);
 
         if (!graphicsQueueRet || !presentQueueRet || !graphicsQueueIndexRet) {
             throw std::runtime_error("failed to get graphics/present queue");
         }
 
-        graphicsQueue_ = graphicsQueueRet.value();
-        presentQueue_ = presentQueueRet.value();
-        graphicsQueueFamily_ = graphicsQueueIndexRet.value();
+        context_.graphicsQueue = graphicsQueueRet.value();
+        context_.presentQueue = presentQueueRet.value();
+        context_.graphicsQueueFamily = graphicsQueueIndexRet.value();
     }
 
     void createSwapchain() {
         int width = 0;
         int height = 0;
-        glfwGetFramebufferSize(window_, &width, &height);
+        glfwGetFramebufferSize(context_.window, &width, &height);
 
         auto buildSwapchainWithMode = [&](VkPresentModeKHR mode) {
-            vkb::SwapchainBuilder builder(device_);
+            vkb::SwapchainBuilder builder(context_.device);
             return builder.set_desired_extent(static_cast<uint32_t>(width), static_cast<uint32_t>(height))
                 .set_desired_present_mode(mode)
-                .set_old_swapchain(swapchain_)
+                .set_old_swapchain(context_.swapchain)
                 .build();
         };
 
@@ -344,25 +297,25 @@ class App {
             throw std::runtime_error(swapchainRet.error().message());
         }
 
-        if (swapchain_.swapchain != VK_NULL_HANDLE) {
-            vkb::destroy_swapchain(swapchain_);
+        if (context_.swapchain.swapchain != VK_NULL_HANDLE) {
+            vkb::destroy_swapchain(context_.swapchain);
         }
 
-        swapchain_ = swapchainRet.value();
-        selectedPresentMode_ = swapchain_.present_mode;
+        context_.swapchain = swapchainRet.value();
+        context_.selectedPresentMode = context_.swapchain.present_mode;
 
-        auto imagesRet = swapchain_.get_images();
-        auto imageViewsRet = swapchain_.get_image_views();
+        auto imagesRet = context_.swapchain.get_images();
+        auto imageViewsRet = context_.swapchain.get_image_views();
         if (!imagesRet || !imageViewsRet) {
             throw std::runtime_error("failed to fetch swapchain images or views");
         }
-        swapchainImages_ = imagesRet.value();
-        swapchainImageViews_ = imageViewsRet.value();
+        context_.swapchainImages = imagesRet.value();
+        context_.swapchainImageViews = imageViewsRet.value();
     }
 
     void createRenderPass() {
         VkAttachmentDescription colorAttachment{};
-        colorAttachment.format = swapchain_.image_format;
+        colorAttachment.format = context_.swapchain.image_format;
         colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -413,7 +366,7 @@ class App {
         renderPassInfo.dependencyCount = 1;
         renderPassInfo.pDependencies = &dependency;
 
-        if (vkCreateRenderPass(device_.device, &renderPassInfo, nullptr, &renderPass_) != VK_SUCCESS) {
+        if (vkCreateRenderPass(context_.device.device, &renderPassInfo, nullptr, &context_.renderPass) != VK_SUCCESS) {
             throw std::runtime_error("failed to create render pass");
         }
     }
@@ -425,7 +378,7 @@ class App {
         createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
         VkShaderModule shaderModule = VK_NULL_HANDLE;
-        if (vkCreateShaderModule(device_.device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+        if (vkCreateShaderModule(context_.device.device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
             throw std::runtime_error("failed to create shader module");
         }
         return shaderModule;
@@ -443,7 +396,7 @@ class App {
         layoutInfo.bindingCount = 1;
         layoutInfo.pBindings = &uboBinding;
 
-        if (vkCreateDescriptorSetLayout(device_.device, &layoutInfo, nullptr, &descriptorSetLayout_) != VK_SUCCESS) {
+        if (vkCreateDescriptorSetLayout(context_.device.device, &layoutInfo, nullptr, &context_.descriptorSetLayout) != VK_SUCCESS) {
             throw std::runtime_error("failed to create descriptor set layout");
         }
     }
@@ -486,14 +439,14 @@ class App {
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width = static_cast<float>(swapchain_.extent.width);
-        viewport.height = static_cast<float>(swapchain_.extent.height);
+        viewport.width = static_cast<float>(context_.swapchain.extent.width);
+        viewport.height = static_cast<float>(context_.swapchain.extent.height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
 
         VkRect2D scissor{};
         scissor.offset = {0, 0};
-        scissor.extent = swapchain_.extent;
+        scissor.extent = context_.swapchain.extent;
 
         VkPipelineViewportStateCreateInfo viewportState{};
         viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -531,7 +484,7 @@ class App {
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.setLayoutCount = 1;
-        pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout_;
+        pipelineLayoutInfo.pSetLayouts = &context_.descriptorSetLayout;
         VkPushConstantRange pushConstantRange{};
         pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         pushConstantRange.offset = 0;
@@ -539,7 +492,7 @@ class App {
         pipelineLayoutInfo.pushConstantRangeCount = 1;
         pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-        if (vkCreatePipelineLayout(device_.device, &pipelineLayoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
+        if (vkCreatePipelineLayout(context_.device.device, &pipelineLayoutInfo, nullptr, &context_.pipelineLayout) != VK_SUCCESS) {
             throw std::runtime_error("failed to create pipeline layout");
         }
 
@@ -554,34 +507,34 @@ class App {
         pipelineInfo.pMultisampleState = &multisampling;
         pipelineInfo.pDepthStencilState = &depthStencil;
         pipelineInfo.pColorBlendState = &colorBlending;
-        pipelineInfo.layout = pipelineLayout_;
-        pipelineInfo.renderPass = renderPass_;
+        pipelineInfo.layout = context_.pipelineLayout;
+        pipelineInfo.renderPass = context_.renderPass;
         pipelineInfo.subpass = 0;
 
-        if (vkCreateGraphicsPipelines(device_.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline_) != VK_SUCCESS) {
+        if (vkCreateGraphicsPipelines(context_.device.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &context_.pipeline) != VK_SUCCESS) {
             throw std::runtime_error("failed to create graphics pipeline");
         }
 
-        vkDestroyShaderModule(device_.device, fragShaderModule, nullptr);
-        vkDestroyShaderModule(device_.device, vertShaderModule, nullptr);
+        vkDestroyShaderModule(context_.device.device, fragShaderModule, nullptr);
+        vkDestroyShaderModule(context_.device.device, vertShaderModule, nullptr);
     }
 
     void createFramebuffers() {
-        swapchainFramebuffers_.resize(swapchainImageViews_.size());
+        context_.swapchainFramebuffers.resize(context_.swapchainImageViews.size());
 
-        for (size_t i = 0; i < swapchainImageViews_.size(); ++i) {
-            std::array<VkImageView, 2> attachments{swapchainImageViews_[i], depthImageView_};
+        for (size_t i = 0; i < context_.swapchainImageViews.size(); ++i) {
+            std::array<VkImageView, 2> attachments{context_.swapchainImageViews[i], context_.depthImageView};
 
             VkFramebufferCreateInfo framebufferInfo{};
             framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-            framebufferInfo.renderPass = renderPass_;
+            framebufferInfo.renderPass = context_.renderPass;
             framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
             framebufferInfo.pAttachments = attachments.data();
-            framebufferInfo.width = swapchain_.extent.width;
-            framebufferInfo.height = swapchain_.extent.height;
+            framebufferInfo.width = context_.swapchain.extent.width;
+            framebufferInfo.height = context_.swapchain.extent.height;
             framebufferInfo.layers = 1;
 
-            if (vkCreateFramebuffer(device_.device, &framebufferInfo, nullptr, &swapchainFramebuffers_[i]) != VK_SUCCESS) {
+            if (vkCreateFramebuffer(context_.device.device, &framebufferInfo, nullptr, &context_.swapchainFramebuffers[i]) != VK_SUCCESS) {
                 throw std::runtime_error("failed to create framebuffer");
             }
         }
@@ -591,16 +544,16 @@ class App {
         VkCommandPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        poolInfo.queueFamilyIndex = graphicsQueueFamily_;
+        poolInfo.queueFamilyIndex = context_.graphicsQueueFamily;
 
-        if (vkCreateCommandPool(device_.device, &poolInfo, nullptr, &commandPool_) != VK_SUCCESS) {
+        if (vkCreateCommandPool(context_.device.device, &poolInfo, nullptr, &context_.commandPool) != VK_SUCCESS) {
             throw std::runtime_error("failed to create command pool");
         }
     }
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
         VkPhysicalDeviceMemoryProperties memProperties{};
-        vkGetPhysicalDeviceMemoryProperties(physicalDevice_.physical_device, &memProperties);
+        vkGetPhysicalDeviceMemoryProperties(context_.physicalDevice.physical_device, &memProperties);
 
         for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
             if ((typeFilter & (1U << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
@@ -619,49 +572,49 @@ class App {
         bufferInfo.usage = usage;
         bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        if (vkCreateBuffer(device_.device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+        if (vkCreateBuffer(context_.device.device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to create buffer");
         }
 
         VkMemoryRequirements memRequirements{};
-        vkGetBufferMemoryRequirements(device_.device, buffer, &memRequirements);
+        vkGetBufferMemoryRequirements(context_.device.device, buffer, &memRequirements);
 
         VkMemoryAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = memRequirements.size;
         allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
 
-        if (vkAllocateMemory(device_.device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
+        if (vkAllocateMemory(context_.device.device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
             throw std::runtime_error("failed to allocate buffer memory");
         }
 
-        vkBindBufferMemory(device_.device, buffer, bufferMemory, 0);
+        vkBindBufferMemory(context_.device.device, buffer, bufferMemory, 0);
     }
 
     void uploadToMemory(VkDeviceMemory memory, const void* src, VkDeviceSize size) {
         void* data = nullptr;
-        vkMapMemory(device_.device, memory, 0, size, 0, &data);
+        vkMapMemory(context_.device.device, memory, 0, size, 0, &data);
         std::memcpy(data, src, static_cast<size_t>(size));
-        vkUnmapMemory(device_.device, memory);
+        vkUnmapMemory(context_.device.device, memory);
     }
 
     void createVertexBuffer() {
         const VkDeviceSize bufferSize = sizeof(kVertices[0]) * kVertices.size();
         createBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, vertexBuffer_, vertexBufferMemory_);
-        uploadToMemory(vertexBufferMemory_, kVertices.data(), bufferSize);
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, context_.vertexBuffer, context_.vertexBufferMemory);
+        uploadToMemory(context_.vertexBufferMemory, kVertices.data(), bufferSize);
     }
 
     void createIndexBuffer() {
         const VkDeviceSize bufferSize = sizeof(kIndices[0]) * kIndices.size();
         createBuffer(bufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, indexBuffer_, indexBufferMemory_);
-        uploadToMemory(indexBufferMemory_, kIndices.data(), bufferSize);
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, context_.indexBuffer, context_.indexBufferMemory);
+        uploadToMemory(context_.indexBufferMemory, kIndices.data(), bufferSize);
     }
 
     void createUniformBuffer() {
         createBuffer(sizeof(UniformBufferObject), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffer_, uniformBufferMemory_);
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, context_.uniformBuffer, context_.uniformBufferMemory);
     }
 
     void createDescriptorPool() {
@@ -675,7 +628,7 @@ class App {
         poolInfo.pPoolSizes = &poolSize;
         poolInfo.maxSets = 1;
 
-        if (vkCreateDescriptorPool(device_.device, &poolInfo, nullptr, &descriptorPool_) != VK_SUCCESS) {
+        if (vkCreateDescriptorPool(context_.device.device, &poolInfo, nullptr, &context_.descriptorPool) != VK_SUCCESS) {
             throw std::runtime_error("failed to create descriptor pool");
         }
     }
@@ -683,52 +636,52 @@ class App {
     void createDescriptorSet() {
         VkDescriptorSetAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorPool = descriptorPool_;
+        allocInfo.descriptorPool = context_.descriptorPool;
         allocInfo.descriptorSetCount = 1;
-        allocInfo.pSetLayouts = &descriptorSetLayout_;
+        allocInfo.pSetLayouts = &context_.descriptorSetLayout;
 
-        if (vkAllocateDescriptorSets(device_.device, &allocInfo, &descriptorSet_) != VK_SUCCESS) {
+        if (vkAllocateDescriptorSets(context_.device.device, &allocInfo, &context_.descriptorSet) != VK_SUCCESS) {
             throw std::runtime_error("failed to allocate descriptor set");
         }
 
         VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = uniformBuffer_;
+        bufferInfo.buffer = context_.uniformBuffer;
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(UniformBufferObject);
 
         VkWriteDescriptorSet descriptorWrite{};
         descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = descriptorSet_;
+        descriptorWrite.dstSet = context_.descriptorSet;
         descriptorWrite.dstBinding = 0;
         descriptorWrite.descriptorCount = 1;
         descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         descriptorWrite.pBufferInfo = &bufferInfo;
 
-        vkUpdateDescriptorSets(device_.device, 1, &descriptorWrite, 0, nullptr);
+        vkUpdateDescriptorSets(context_.device.device, 1, &descriptorWrite, 0, nullptr);
     }
 
     void createCommandBuffers() {
-        commandBuffers_.resize(swapchainImages_.size());
+        context_.commandBuffers.resize(context_.swapchainImages.size());
 
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocInfo.commandPool = commandPool_;
+        allocInfo.commandPool = context_.commandPool;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers_.size());
+        allocInfo.commandBufferCount = static_cast<uint32_t>(context_.commandBuffers.size());
 
-        if (vkAllocateCommandBuffers(device_.device, &allocInfo, commandBuffers_.data()) != VK_SUCCESS) {
+        if (vkAllocateCommandBuffers(context_.device.device, &allocInfo, context_.commandBuffers.data()) != VK_SUCCESS) {
             throw std::runtime_error("failed to allocate command buffers");
         }
     }
 
     void createTimestampQueryPool() {
-        if (!gpuTimestampsSupported_) {
+        if (!context_.gpuTimestampsSupported) {
             return;
         }
 
-        if (gpuTimestampQueryPool_ != VK_NULL_HANDLE) {
-            vkDestroyQueryPool(device_.device, gpuTimestampQueryPool_, nullptr);
-            gpuTimestampQueryPool_ = VK_NULL_HANDLE;
+        if (context_.gpuTimestampQueryPool != VK_NULL_HANDLE) {
+            vkDestroyQueryPool(context_.device.device, context_.gpuTimestampQueryPool, nullptr);
+            context_.gpuTimestampQueryPool = VK_NULL_HANDLE;
         }
 
         VkQueryPoolCreateInfo queryPoolInfo{};
@@ -736,12 +689,12 @@ class App {
         queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
         queryPoolInfo.queryCount = 2U * static_cast<uint32_t>(kMaxFramesInFlight);
 
-        if (vkCreateQueryPool(device_.device, &queryPoolInfo, nullptr, &gpuTimestampQueryPool_) != VK_SUCCESS) {
-            gpuTimestampsSupported_ = false;
+        if (vkCreateQueryPool(context_.device.device, &queryPoolInfo, nullptr, &context_.gpuTimestampQueryPool) != VK_SUCCESS) {
+            context_.gpuTimestampsSupported = false;
             return;
         }
 
-        gpuQueryValid_.fill(false);
+        context_.gpuQueryValid.fill(false);
     }
 
     void createSyncObjects() {
@@ -753,9 +706,9 @@ class App {
         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
         for (int i = 0; i < kMaxFramesInFlight; i++) {
-            if (vkCreateSemaphore(device_.device, &semaphoreInfo, nullptr, &imageAvailableSemaphores_[i]) != VK_SUCCESS ||
-                vkCreateSemaphore(device_.device, &semaphoreInfo, nullptr, &renderFinishedSemaphores_[i]) != VK_SUCCESS ||
-                vkCreateFence(device_.device, &fenceInfo, nullptr, &inFlightFences_[i]) != VK_SUCCESS) {
+            if (vkCreateSemaphore(context_.device.device, &semaphoreInfo, nullptr, &context_.imageAvailableSemaphores[i]) != VK_SUCCESS ||
+                vkCreateSemaphore(context_.device.device, &semaphoreInfo, nullptr, &context_.renderFinishedSemaphores[i]) != VK_SUCCESS ||
+                vkCreateFence(context_.device.device, &fenceInfo, nullptr, &context_.inFlightFences[i]) != VK_SUCCESS) {
                 throw std::runtime_error("failed to create sync objects");
             }
         }
@@ -764,7 +717,7 @@ class App {
     VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) {
         for (VkFormat format : candidates) {
             VkFormatProperties props{};
-            vkGetPhysicalDeviceFormatProperties(physicalDevice_.physical_device, format, &props);
+            vkGetPhysicalDeviceFormatProperties(context_.physicalDevice.physical_device, format, &props);
 
             if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features) {
                 return format;
@@ -777,9 +730,9 @@ class App {
     }
 
     VkFormat findDepthFormat() {
-        depthFormat_ = findSupportedFormat({VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
+        context_.depthFormat = findSupportedFormat({VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
                                            VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
-        return depthFormat_;
+        return context_.depthFormat;
     }
 
     void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
@@ -799,23 +752,23 @@ class App {
         imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
         imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        if (vkCreateImage(device_.device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
+        if (vkCreateImage(context_.device.device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
             throw std::runtime_error("failed to create image");
         }
 
         VkMemoryRequirements memRequirements{};
-        vkGetImageMemoryRequirements(device_.device, image, &memRequirements);
+        vkGetImageMemoryRequirements(context_.device.device, image, &memRequirements);
 
         VkMemoryAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = memRequirements.size;
         allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
 
-        if (vkAllocateMemory(device_.device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
+        if (vkAllocateMemory(context_.device.device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
             throw std::runtime_error("failed to allocate image memory");
         }
 
-        vkBindImageMemory(device_.device, image, imageMemory, 0);
+        vkBindImageMemory(context_.device.device, image, imageMemory, 0);
     }
 
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags) {
@@ -831,16 +784,16 @@ class App {
         viewInfo.subresourceRange.layerCount = 1;
 
         VkImageView imageView = VK_NULL_HANDLE;
-        if (vkCreateImageView(device_.device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
+        if (vkCreateImageView(context_.device.device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
             throw std::runtime_error("failed to create image view");
         }
         return imageView;
     }
 
     void createDepthResources() {
-        createImage(swapchain_.extent.width, swapchain_.extent.height, findDepthFormat(), VK_IMAGE_TILING_OPTIMAL,
-                    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depthImage_, depthImageMemory_);
-        depthImageView_ = createImageView(depthImage_, depthFormat_, VK_IMAGE_ASPECT_DEPTH_BIT);
+        createImage(context_.swapchain.extent.width, context_.swapchain.extent.height, findDepthFormat(), VK_IMAGE_TILING_OPTIMAL,
+                    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, context_.depthImage, context_.depthImageMemory);
+        context_.depthImageView = createImageView(context_.depthImage, context_.depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
     }
 
     void initImGui() {
@@ -865,7 +818,7 @@ class App {
         poolInfo.poolSizeCount = static_cast<uint32_t>(std::size(poolSizes));
         poolInfo.pPoolSizes = poolSizes;
 
-        if (vkCreateDescriptorPool(device_.device, &poolInfo, nullptr, &imguiDescriptorPool_) != VK_SUCCESS) {
+        if (vkCreateDescriptorPool(context_.device.device, &poolInfo, nullptr, &context_.imguiDescriptorPool) != VK_SUCCESS) {
             throw std::runtime_error("failed to create imgui descriptor pool");
         }
 
@@ -873,22 +826,22 @@ class App {
         ImGui::CreateContext();
         ImGui::StyleColorsDark();
 
-        if (!ImGui_ImplGlfw_InitForVulkan(window_, true)) {
+        if (!ImGui_ImplGlfw_InitForVulkan(context_.window, true)) {
             throw std::runtime_error("failed to initialize imgui glfw backend");
         }
 
         ImGui_ImplVulkan_InitInfo initInfo{};
         initInfo.ApiVersion = VK_API_VERSION_1_2;
-        initInfo.Instance = instance_.instance;
-        initInfo.PhysicalDevice = physicalDevice_.physical_device;
-        initInfo.Device = device_.device;
-        initInfo.QueueFamily = graphicsQueueFamily_;
-        initInfo.Queue = graphicsQueue_;
-        initInfo.DescriptorPool = imguiDescriptorPool_;
-        initInfo.MinImageCount = swapchain_.image_count;
-        initInfo.ImageCount = swapchain_.image_count;
+        initInfo.Instance = context_.instance.instance;
+        initInfo.PhysicalDevice = context_.physicalDevice.physical_device;
+        initInfo.Device = context_.device.device;
+        initInfo.QueueFamily = context_.graphicsQueueFamily;
+        initInfo.Queue = context_.graphicsQueue;
+        initInfo.DescriptorPool = context_.imguiDescriptorPool;
+        initInfo.MinImageCount = context_.swapchain.image_count;
+        initInfo.ImageCount = context_.swapchain.image_count;
         initInfo.UseDynamicRendering = false;
-        initInfo.PipelineInfoMain.RenderPass = renderPass_;
+        initInfo.PipelineInfoMain.RenderPass = context_.renderPass;
         initInfo.PipelineInfoMain.Subpass = 0;
         initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 
@@ -900,16 +853,16 @@ class App {
     void processInput(float deltaSeconds) {
         constexpr float rotateSpeed = 90.0f;
 
-        if (glfwGetKey(window_, GLFW_KEY_LEFT) == GLFW_PRESS) {
+        if (glfwGetKey(context_.window, GLFW_KEY_LEFT) == GLFW_PRESS) {
             yaw_ -= rotateSpeed * deltaSeconds;
         }
-        if (glfwGetKey(window_, GLFW_KEY_RIGHT) == GLFW_PRESS) {
+        if (glfwGetKey(context_.window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
             yaw_ += rotateSpeed * deltaSeconds;
         }
-        if (glfwGetKey(window_, GLFW_KEY_UP) == GLFW_PRESS) {
+        if (glfwGetKey(context_.window, GLFW_KEY_UP) == GLFW_PRESS) {
             pitch_ += rotateSpeed * deltaSeconds;
         }
-        if (glfwGetKey(window_, GLFW_KEY_DOWN) == GLFW_PRESS) {
+        if (glfwGetKey(context_.window, GLFW_KEY_DOWN) == GLFW_PRESS) {
             pitch_ -= rotateSpeed * deltaSeconds;
         }
     }
@@ -919,11 +872,11 @@ class App {
 
         const glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 120.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         glm::mat4 projection =
-            glm::perspective(glm::radians(60.0f), swapchain_.extent.width / static_cast<float>(swapchain_.extent.height), 0.1f, 2000.0f);
+            glm::perspective(glm::radians(60.0f), context_.swapchain.extent.width / static_cast<float>(context_.swapchain.extent.height), 0.1f, 2000.0f);
         projection[1][1] *= -1.0f;
 
         ubo.viewProj = projection * view;
-        uploadToMemory(uniformBufferMemory_, &ubo, sizeof(ubo));
+        uploadToMemory(context_.uniformBufferMemory, &ubo, sizeof(ubo));
     }
 
     glm::mat4 computeBaseRotation(float elapsedSeconds) const {
@@ -943,9 +896,9 @@ class App {
         }
 
         const uint32_t queryStart = 2U * static_cast<uint32_t>(frameIndex);
-        if (gpuTimestampQueryPool_ != VK_NULL_HANDLE) {
-            vkCmdResetQueryPool(commandBuffer, gpuTimestampQueryPool_, queryStart, 2);
-            vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, gpuTimestampQueryPool_, queryStart);
+        if (context_.gpuTimestampQueryPool != VK_NULL_HANDLE) {
+            vkCmdResetQueryPool(commandBuffer, context_.gpuTimestampQueryPool, queryStart, 2);
+            vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, context_.gpuTimestampQueryPool, queryStart);
         }
 
         std::array<VkClearValue, 2> clearValues{};
@@ -954,28 +907,28 @@ class App {
 
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderPassInfo.renderPass = renderPass_;
-        renderPassInfo.framebuffer = swapchainFramebuffers_[imageIndex];
+        renderPassInfo.renderPass = context_.renderPass;
+        renderPassInfo.framebuffer = context_.swapchainFramebuffers[imageIndex];
         renderPassInfo.renderArea.offset = {0, 0};
-        renderPassInfo.renderArea.extent = swapchain_.extent;
+        renderPassInfo.renderArea.extent = context_.swapchain.extent;
         renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
         renderPassInfo.pClearValues = clearValues.data();
 
         vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, context_.pipeline);
 
-        VkBuffer vertexBuffers[] = {vertexBuffer_};
+        VkBuffer vertexBuffers[] = {context_.vertexBuffer};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(commandBuffer, indexBuffer_, 0, VK_INDEX_TYPE_UINT16);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1, &descriptorSet_, 0, nullptr);
+        vkCmdBindIndexBuffer(commandBuffer, context_.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, context_.pipelineLayout, 0, 1, &context_.descriptorSet, 0, nullptr);
 
         const glm::mat4 baseRotation = computeBaseRotation(elapsedSeconds);
         for (const glm::vec3& offset : cubeOffsets_) {
             PushConstantData push{};
             push.model = glm::translate(baseRotation, offset);
-            vkCmdPushConstants(commandBuffer, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstantData), &push);
+            vkCmdPushConstants(commandBuffer, context_.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstantData), &push);
             vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(kIndices.size()), 1, 0, 0, 0);
         }
 
@@ -983,8 +936,8 @@ class App {
 
         vkCmdEndRenderPass(commandBuffer);
 
-        if (gpuTimestampQueryPool_ != VK_NULL_HANDLE) {
-            vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, gpuTimestampQueryPool_, queryStart + 1);
+        if (context_.gpuTimestampQueryPool != VK_NULL_HANDLE) {
+            vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, context_.gpuTimestampQueryPool, queryStart + 1);
         }
 
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
@@ -995,13 +948,13 @@ class App {
     void recreateSwapchain() {
         int width = 0;
         int height = 0;
-        glfwGetFramebufferSize(window_, &width, &height);
+        glfwGetFramebufferSize(context_.window, &width, &height);
         while (width == 0 || height == 0) {
-            glfwGetFramebufferSize(window_, &width, &height);
+            glfwGetFramebufferSize(context_.window, &width, &height);
             glfwWaitEvents();
         }
 
-        vkDeviceWaitIdle(device_.device);
+        vkDeviceWaitIdle(context_.device.device);
 
         cleanupSwapchain();
 
@@ -1013,20 +966,20 @@ class App {
         createCommandBuffers();
         createTimestampQueryPool();
 
-        ImGui_ImplVulkan_SetMinImageCount(swapchain_.image_count);
+        ImGui_ImplVulkan_SetMinImageCount(context_.swapchain.image_count);
         ImGui_ImplVulkan_Shutdown();
         ImGui_ImplVulkan_InitInfo initInfo{};
         initInfo.ApiVersion = VK_API_VERSION_1_2;
-        initInfo.Instance = instance_.instance;
-        initInfo.PhysicalDevice = physicalDevice_.physical_device;
-        initInfo.Device = device_.device;
-        initInfo.QueueFamily = graphicsQueueFamily_;
-        initInfo.Queue = graphicsQueue_;
-        initInfo.DescriptorPool = imguiDescriptorPool_;
-        initInfo.MinImageCount = swapchain_.image_count;
-        initInfo.ImageCount = swapchain_.image_count;
+        initInfo.Instance = context_.instance.instance;
+        initInfo.PhysicalDevice = context_.physicalDevice.physical_device;
+        initInfo.Device = context_.device.device;
+        initInfo.QueueFamily = context_.graphicsQueueFamily;
+        initInfo.Queue = context_.graphicsQueue;
+        initInfo.DescriptorPool = context_.imguiDescriptorPool;
+        initInfo.MinImageCount = context_.swapchain.image_count;
+        initInfo.ImageCount = context_.swapchain.image_count;
         initInfo.UseDynamicRendering = false;
-        initInfo.PipelineInfoMain.RenderPass = renderPass_;
+        initInfo.PipelineInfoMain.RenderPass = context_.renderPass;
         initInfo.PipelineInfoMain.Subpass = 0;
         initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
         if (!ImGui_ImplVulkan_Init(&initInfo)) {
@@ -1035,14 +988,14 @@ class App {
     }
 
     void drawFrame(float deltaSeconds, float elapsedSeconds) {
-        vkWaitForFences(device_.device, 1, &inFlightFences_[currentFrame_], VK_TRUE, UINT64_MAX);
+        vkWaitForFences(context_.device.device, 1, &context_.inFlightFences[context_.currentFrame], VK_TRUE, UINT64_MAX);
 
-        if (gpuTimestampQueryPool_ != VK_NULL_HANDLE && gpuQueryValid_[currentFrame_]) {
-            const uint32_t queryStart = 2U * static_cast<uint32_t>(currentFrame_);
+        if (context_.gpuTimestampQueryPool != VK_NULL_HANDLE && context_.gpuQueryValid[context_.currentFrame]) {
+            const uint32_t queryStart = 2U * static_cast<uint32_t>(context_.currentFrame);
             uint64_t timestamps[2] = {};
             const VkResult result = vkGetQueryPoolResults(
-                device_.device,
-                gpuTimestampQueryPool_,
+                context_.device.device,
+                context_.gpuTimestampQueryPool,
                 queryStart,
                 2,
                 sizeof(timestamps),
@@ -1051,13 +1004,13 @@ class App {
                 VK_QUERY_RESULT_64_BIT);
             if (result == VK_SUCCESS && timestamps[1] >= timestamps[0]) {
                 const double deltaTicks = static_cast<double>(timestamps[1] - timestamps[0]);
-                gpuFrameMs_ = static_cast<float>((deltaTicks * timestampPeriodNs_) * 1e-6);
+                gpuFrameMs_ = static_cast<float>((deltaTicks * context_.timestampPeriodNs) * 1e-6);
             }
         }
 
         uint32_t imageIndex = 0;
         const VkResult acquireResult =
-            vkAcquireNextImageKHR(device_.device, swapchain_.swapchain, UINT64_MAX, imageAvailableSemaphores_[currentFrame_],
+            vkAcquireNextImageKHR(context_.device.device, context_.swapchain.swapchain, UINT64_MAX, context_.imageAvailableSemaphores[context_.currentFrame],
                                   VK_NULL_HANDLE, &imageIndex);
 
         if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
@@ -1068,8 +1021,8 @@ class App {
             throw std::runtime_error("failed to acquire swapchain image");
         }
 
-        vkResetFences(device_.device, 1, &inFlightFences_[currentFrame_]);
-        vkResetCommandBuffer(commandBuffers_[imageIndex], 0);
+        vkResetFences(context_.device.device, 1, &context_.inFlightFences[context_.currentFrame]);
+        vkResetCommandBuffer(context_.commandBuffers[imageIndex], 0);
 
         processInput(deltaSeconds);
 
@@ -1086,10 +1039,14 @@ class App {
             rebuildCubeOffsets();
         }
         fps_ = (deltaSeconds > 0.0f) ? (1.0f / deltaSeconds) : 0.0f;
+        const uint64_t triangles = static_cast<uint64_t>(cubeCount_) * 12ULL;
+        const uint64_t vertices = static_cast<uint64_t>(cubeCount_) * 8ULL;
         ImGui::Text("FPS %.1f", fps_);
         ImGui::Text("Frame time %.3f ms", 1000.0f * deltaSeconds);
-        ImGui::Text("Present mode %s", presentModeToString(selectedPresentMode_));
-        if (gpuTimestampQueryPool_ != VK_NULL_HANDLE) {
+        ImGui::Text("Triangles %llu", static_cast<unsigned long long>(triangles));
+        ImGui::Text("Vertices %llu", static_cast<unsigned long long>(vertices));
+        ImGui::Text("Present mode %s", presentModeToString(context_.selectedPresentMode));
+        if (context_.gpuTimestampQueryPool != VK_NULL_HANDLE) {
             ImGui::Text("GPU frame %.3f ms", gpuFrameMs_);
         } else {
             ImGui::TextUnformatted("GPU frame n/a (timestamps unsupported)");
@@ -1101,12 +1058,12 @@ class App {
         ImGui::Render();
 
         updateUniformBuffer();
-        recordCommandBuffer(commandBuffers_[imageIndex], imageIndex, elapsedSeconds, currentFrame_);
-        gpuQueryValid_[currentFrame_] = (gpuTimestampQueryPool_ != VK_NULL_HANDLE);
+        recordCommandBuffer(context_.commandBuffers[imageIndex], imageIndex, elapsedSeconds, context_.currentFrame);
+        context_.gpuQueryValid[context_.currentFrame] = (context_.gpuTimestampQueryPool != VK_NULL_HANDLE);
 
-        VkSemaphore waitSemaphores[] = {imageAvailableSemaphores_[currentFrame_]};
+        VkSemaphore waitSemaphores[] = {context_.imageAvailableSemaphores[context_.currentFrame]};
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-        VkSemaphore signalSemaphores[] = {renderFinishedSemaphores_[currentFrame_]};
+        VkSemaphore signalSemaphores[] = {context_.renderFinishedSemaphores[context_.currentFrame]};
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1114,15 +1071,15 @@ class App {
         submitInfo.pWaitSemaphores = waitSemaphores;
         submitInfo.pWaitDstStageMask = waitStages;
         submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &commandBuffers_[imageIndex];
+        submitInfo.pCommandBuffers = &context_.commandBuffers[imageIndex];
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = signalSemaphores;
 
-        if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFences_[currentFrame_]) != VK_SUCCESS) {
+        if (vkQueueSubmit(context_.graphicsQueue, 1, &submitInfo, context_.inFlightFences[context_.currentFrame]) != VK_SUCCESS) {
             throw std::runtime_error("failed to submit draw command buffer");
         }
 
-        VkSwapchainKHR swapchains[] = {swapchain_.swapchain};
+        VkSwapchainKHR swapchains[] = {context_.swapchain.swapchain};
         VkPresentInfoKHR presentInfo{};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         presentInfo.waitSemaphoreCount = 1;
@@ -1131,22 +1088,22 @@ class App {
         presentInfo.pSwapchains = swapchains;
         presentInfo.pImageIndices = &imageIndex;
 
-        const VkResult presentResult = vkQueuePresentKHR(presentQueue_, &presentInfo);
-        if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR || framebufferResized_) {
-            framebufferResized_ = false;
+        const VkResult presentResult = vkQueuePresentKHR(context_.presentQueue, &presentInfo);
+        if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR || context_.framebufferResized) {
+            context_.framebufferResized = false;
             recreateSwapchain();
         } else if (presentResult != VK_SUCCESS) {
             throw std::runtime_error("failed to present swapchain image");
         }
 
-        currentFrame_ = (currentFrame_ + 1) % kMaxFramesInFlight;
+        context_.currentFrame = (context_.currentFrame + 1) % kMaxFramesInFlight;
     }
 
     void mainLoop() {
         const auto start = std::chrono::high_resolution_clock::now();
         auto last = start;
 
-        while (!glfwWindowShouldClose(window_)) {
+        while (!glfwWindowShouldClose(context_.window)) {
             glfwPollEvents();
 
             const auto now = std::chrono::high_resolution_clock::now();
@@ -1160,67 +1117,71 @@ class App {
             drawFrame(deltaSeconds, elapsedSeconds);
         }
 
-        vkDeviceWaitIdle(device_.device);
+        vkDeviceWaitIdle(context_.device.device);
+        const uint64_t triangles = static_cast<uint64_t>(cubeCount_) * 12ULL;
+        const uint64_t vertices = static_cast<uint64_t>(cubeCount_) * 8ULL;
         std::cout << "[EXIT] vkraw status=OK code=0"
                   << " frames=" << frameCount_
                   << " seconds=" << runSeconds_
                   << " cubes=" << cubeCount_
+                  << " triangles=" << triangles
+                  << " vertices=" << vertices
                   << " fps=" << fps_
                   << " cpu_ms=" << cpuFrameMs_
                   << " gpu_ms=" << gpuFrameMs_
-                  << " present_mode=" << presentModeToString(selectedPresentMode_)
+                  << " present_mode=" << presentModeToString(context_.selectedPresentMode)
                   << std::endl;
     }
 
     void cleanupSwapchain() {
-        for (VkFramebuffer framebuffer : swapchainFramebuffers_) {
-            vkDestroyFramebuffer(device_.device, framebuffer, nullptr);
+        for (VkFramebuffer framebuffer : context_.swapchainFramebuffers) {
+            vkDestroyFramebuffer(context_.device.device, framebuffer, nullptr);
         }
-        swapchainFramebuffers_.clear();
+        context_.swapchainFramebuffers.clear();
 
-        if (!commandBuffers_.empty()) {
-            vkFreeCommandBuffers(device_.device, commandPool_, static_cast<uint32_t>(commandBuffers_.size()), commandBuffers_.data());
-            commandBuffers_.clear();
-        }
-
-        if (gpuTimestampQueryPool_ != VK_NULL_HANDLE) {
-            vkDestroyQueryPool(device_.device, gpuTimestampQueryPool_, nullptr);
-            gpuTimestampQueryPool_ = VK_NULL_HANDLE;
+        if (!context_.commandBuffers.empty()) {
+            vkFreeCommandBuffers(context_.device.device, context_.commandPool, static_cast<uint32_t>(context_.commandBuffers.size()), context_.commandBuffers.data());
+            context_.commandBuffers.clear();
         }
 
-        if (pipeline_ != VK_NULL_HANDLE) {
-            vkDestroyPipeline(device_.device, pipeline_, nullptr);
-            pipeline_ = VK_NULL_HANDLE;
-        }
-        if (pipelineLayout_ != VK_NULL_HANDLE) {
-            vkDestroyPipelineLayout(device_.device, pipelineLayout_, nullptr);
-            pipelineLayout_ = VK_NULL_HANDLE;
-        }
-        if (renderPass_ != VK_NULL_HANDLE) {
-            vkDestroyRenderPass(device_.device, renderPass_, nullptr);
-            renderPass_ = VK_NULL_HANDLE;
+        if (context_.gpuTimestampQueryPool != VK_NULL_HANDLE) {
+            vkDestroyQueryPool(context_.device.device, context_.gpuTimestampQueryPool, nullptr);
+            context_.gpuTimestampQueryPool = VK_NULL_HANDLE;
         }
 
-        if (depthImageView_ != VK_NULL_HANDLE) {
-            vkDestroyImageView(device_.device, depthImageView_, nullptr);
-            depthImageView_ = VK_NULL_HANDLE;
+        if (context_.pipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(context_.device.device, context_.pipeline, nullptr);
+            context_.pipeline = VK_NULL_HANDLE;
         }
-        if (depthImage_ != VK_NULL_HANDLE) {
-            vkDestroyImage(device_.device, depthImage_, nullptr);
-            depthImage_ = VK_NULL_HANDLE;
+        if (context_.pipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(context_.device.device, context_.pipelineLayout, nullptr);
+            context_.pipelineLayout = VK_NULL_HANDLE;
         }
-        if (depthImageMemory_ != VK_NULL_HANDLE) {
-            vkFreeMemory(device_.device, depthImageMemory_, nullptr);
-            depthImageMemory_ = VK_NULL_HANDLE;
+        if (context_.renderPass != VK_NULL_HANDLE) {
+            vkDestroyRenderPass(context_.device.device, context_.renderPass, nullptr);
+            context_.renderPass = VK_NULL_HANDLE;
         }
 
-        if (!swapchainImageViews_.empty()) {
-            swapchain_.destroy_image_views(swapchainImageViews_);
-            swapchainImageViews_.clear();
+        if (context_.depthImageView != VK_NULL_HANDLE) {
+            vkDestroyImageView(context_.device.device, context_.depthImageView, nullptr);
+            context_.depthImageView = VK_NULL_HANDLE;
         }
-        if (swapchain_.swapchain != VK_NULL_HANDLE) {
-            vkb::destroy_swapchain(swapchain_);
-            swapchain_ = {};
+        if (context_.depthImage != VK_NULL_HANDLE) {
+            vkDestroyImage(context_.device.device, context_.depthImage, nullptr);
+            context_.depthImage = VK_NULL_HANDLE;
+        }
+        if (context_.depthImageMemory != VK_NULL_HANDLE) {
+            vkFreeMemory(context_.device.device, context_.depthImageMemory, nullptr);
+            context_.depthImageMemory = VK_NULL_HANDLE;
+        }
+
+        if (!context_.swapchainImageViews.empty()) {
+            context_.swapchain.destroy_image_views(context_.swapchainImageViews);
+            context_.swapchainImageViews.clear();
+        }
+        if (context_.swapchain.swapchain != VK_NULL_HANDLE) {
+            vkb::destroy_swapchain(context_.swapchain);
+            context_.swapchain = {};
         }
     }
 
@@ -1231,64 +1192,64 @@ class App {
 
         cleanupSwapchain();
 
-        if (imguiDescriptorPool_ != VK_NULL_HANDLE) {
-            vkDestroyDescriptorPool(device_.device, imguiDescriptorPool_, nullptr);
+        if (context_.imguiDescriptorPool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(context_.device.device, context_.imguiDescriptorPool, nullptr);
         }
-        if (descriptorPool_ != VK_NULL_HANDLE) {
-            vkDestroyDescriptorPool(device_.device, descriptorPool_, nullptr);
+        if (context_.descriptorPool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(context_.device.device, context_.descriptorPool, nullptr);
         }
-        if (descriptorSetLayout_ != VK_NULL_HANDLE) {
-            vkDestroyDescriptorSetLayout(device_.device, descriptorSetLayout_, nullptr);
+        if (context_.descriptorSetLayout != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(context_.device.device, context_.descriptorSetLayout, nullptr);
         }
 
-        if (uniformBuffer_ != VK_NULL_HANDLE) {
-            vkDestroyBuffer(device_.device, uniformBuffer_, nullptr);
+        if (context_.uniformBuffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(context_.device.device, context_.uniformBuffer, nullptr);
         }
-        if (uniformBufferMemory_ != VK_NULL_HANDLE) {
-            vkFreeMemory(device_.device, uniformBufferMemory_, nullptr);
+        if (context_.uniformBufferMemory != VK_NULL_HANDLE) {
+            vkFreeMemory(context_.device.device, context_.uniformBufferMemory, nullptr);
         }
-        if (indexBuffer_ != VK_NULL_HANDLE) {
-            vkDestroyBuffer(device_.device, indexBuffer_, nullptr);
+        if (context_.indexBuffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(context_.device.device, context_.indexBuffer, nullptr);
         }
-        if (indexBufferMemory_ != VK_NULL_HANDLE) {
-            vkFreeMemory(device_.device, indexBufferMemory_, nullptr);
+        if (context_.indexBufferMemory != VK_NULL_HANDLE) {
+            vkFreeMemory(context_.device.device, context_.indexBufferMemory, nullptr);
         }
-        if (vertexBuffer_ != VK_NULL_HANDLE) {
-            vkDestroyBuffer(device_.device, vertexBuffer_, nullptr);
+        if (context_.vertexBuffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(context_.device.device, context_.vertexBuffer, nullptr);
         }
-        if (vertexBufferMemory_ != VK_NULL_HANDLE) {
-            vkFreeMemory(device_.device, vertexBufferMemory_, nullptr);
+        if (context_.vertexBufferMemory != VK_NULL_HANDLE) {
+            vkFreeMemory(context_.device.device, context_.vertexBufferMemory, nullptr);
         }
 
         for (size_t i = 0; i < kMaxFramesInFlight; ++i) {
-            if (imageAvailableSemaphores_[i] != VK_NULL_HANDLE) {
-                vkDestroySemaphore(device_.device, imageAvailableSemaphores_[i], nullptr);
+            if (context_.imageAvailableSemaphores[i] != VK_NULL_HANDLE) {
+                vkDestroySemaphore(context_.device.device, context_.imageAvailableSemaphores[i], nullptr);
             }
-            if (renderFinishedSemaphores_[i] != VK_NULL_HANDLE) {
-                vkDestroySemaphore(device_.device, renderFinishedSemaphores_[i], nullptr);
+            if (context_.renderFinishedSemaphores[i] != VK_NULL_HANDLE) {
+                vkDestroySemaphore(context_.device.device, context_.renderFinishedSemaphores[i], nullptr);
             }
-            if (inFlightFences_[i] != VK_NULL_HANDLE) {
-                vkDestroyFence(device_.device, inFlightFences_[i], nullptr);
+            if (context_.inFlightFences[i] != VK_NULL_HANDLE) {
+                vkDestroyFence(context_.device.device, context_.inFlightFences[i], nullptr);
             }
         }
 
-        if (commandPool_ != VK_NULL_HANDLE) {
-            vkDestroyCommandPool(device_.device, commandPool_, nullptr);
+        if (context_.commandPool != VK_NULL_HANDLE) {
+            vkDestroyCommandPool(context_.device.device, context_.commandPool, nullptr);
         }
 
-        if (device_.device != VK_NULL_HANDLE) {
-            vkb::destroy_device(device_);
+        if (context_.device.device != VK_NULL_HANDLE) {
+            vkb::destroy_device(context_.device);
         }
-        if (surface_ != VK_NULL_HANDLE) {
-            vkb::destroy_surface(instance_, surface_);
+        if (context_.surface != VK_NULL_HANDLE) {
+            vkb::destroy_surface(context_.instance, context_.surface);
         }
-        if (instance_.instance != VK_NULL_HANDLE) {
-            vkb::destroy_instance(instance_);
+        if (context_.instance.instance != VK_NULL_HANDLE) {
+            vkb::destroy_instance(context_.instance);
         }
 
-        if (window_) {
-            glfwDestroyWindow(window_);
-            window_ = nullptr;
+        if (context_.window) {
+            glfwDestroyWindow(context_.window);
+            context_.window = nullptr;
         }
         glfwTerminate();
     }
@@ -1296,10 +1257,13 @@ class App {
 
 } // namespace
 
-int main() {
+namespace vkraw {
+
+int runVkrawApp()
+{
     try {
-        App app;
-        app.run();
+        VkVisualizer visualizer;
+        visualizer.run();
     } catch (const std::exception& e) {
         std::cout << "[EXIT] vkraw status=FAIL code=1 reason=\"" << e.what() << "\"" << std::endl;
         std::cerr << "error: " << e.what() << '\n';
@@ -1307,3 +1271,5 @@ int main() {
     }
     return EXIT_SUCCESS;
 }
+
+} // namespace vkraw
