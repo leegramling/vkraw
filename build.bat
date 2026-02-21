@@ -4,6 +4,23 @@ setlocal EnableExtensions EnableDelayedExpansion
 set "ROOT=%~dp0"
 cd /d "%ROOT%"
 
+set "BUILD_TYPE=Release"
+if not "%~1"=="" set "BUILD_TYPE=%~1"
+
+if /I not "%BUILD_TYPE%"=="Debug" if /I not "%BUILD_TYPE%"=="Release" if /I not "%BUILD_TYPE%"=="RelWithDebInfo" (
+  echo [ERROR] Invalid build type "%BUILD_TYPE%".
+  echo         Usage: build.bat [Debug^|Release^|RelWithDebInfo]
+  exit /b 1
+)
+
+if /I "%BUILD_TYPE%"=="Release" (
+  if exist "%ROOT%..\vsg_deps\install\lib\vsgd.lib" if not exist "%ROOT%..\vsg_deps\install\lib\vsg.lib" (
+    echo [WARN] Found debug-only VSG libraries in ..\vsg_deps\install\lib.
+    echo [WARN] Switching build type to Debug to match dependencies.
+    set "BUILD_TYPE=Debug"
+  )
+)
+
 set "SDK_ROOT=C:\VulkanSDK"
 set "VULKAN_BIN="
 
@@ -54,20 +71,26 @@ if errorlevel 1 (
 where ninja >nul 2>&1
 if errorlevel 1 (
   set "GEN=-G Visual Studio 17 2022 -A x64"
-  set "CFG=--config Release"
+  set "CFG=--config %BUILD_TYPE%"
+  set "TYPE_ARG="
   echo [INFO] Ninja not found. Using Visual Studio generator.
 ) else (
   set "GEN=-G Ninja"
   set "CFG="
+  set "TYPE_ARG=-DCMAKE_BUILD_TYPE=%BUILD_TYPE%"
   echo [INFO] Using Ninja generator.
 )
 
-if not exist build mkdir build
+echo [INFO] Build type: %BUILD_TYPE%
+set "BUILD_DIR=build-%BUILD_TYPE%"
+echo [INFO] Build dir: %BUILD_DIR%
 
-cmake -S . -B build %GEN%
+if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
+
+cmake -S . -B "%BUILD_DIR%" %GEN% %TYPE_ARG%
 if errorlevel 1 exit /b 1
 
-cmake --build build --parallel %CFG% --target vkraw vkvsg
+cmake --build "%BUILD_DIR%" --parallel %CFG% --target vkraw vkvsg
 if errorlevel 1 exit /b 1
 
 echo [OK] Build complete: vkraw + vkvsg
