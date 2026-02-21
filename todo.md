@@ -2,6 +2,10 @@
 
 This plan is derived from `osm.md` and is organized by priority.
 
+## Workflow Rule
+
+- [ ] Always run `git add` and commit after each completed task.
+
 ## High Priority
 
 - [ ] Create `OsmProjection` module in `src/vkglobe/` using Web Mercator tile math from `vsgLayt` (`lon/lat <-> pixel`, `z/x/y` conversions, x-wrap, y-clamp).
@@ -45,4 +49,3 @@ This plan is derived from `osm.md` and is organized by priority.
 4. `--osm` + altitude gate
 5. per-frame tile selection + budgeted fetch/compile
 6. render per-tile textured globe patches
-

@@ -1,4 +1,5 @@
 #include "vkglobe/VsgVisualizer.h"
+#include "vkglobe/OsmTileManager.h"
 #include "vkglobe/UIObject.h"
 
 #include <vsg/all.h>
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <string>
 
 namespace
@@ -479,9 +481,19 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
 
         float runDurationSeconds = 0.0f;
         std::string earthTexturePath;
+        bool osmEnabled = false;
+        std::string osmCachePath = "cache/osm";
+        double osmEnableAltFt = 800.0;
+        double osmDisableAltFt = 1200.0;
+        int osmMaxZoom = 19;
         arguments.read("--seconds", runDurationSeconds);
         arguments.read("--duration", runDurationSeconds);
         while (arguments.read("--earth-texture", earthTexturePath)) {}
+        while (arguments.read("--osm")) osmEnabled = true;
+        while (arguments.read("--osm-cache", osmCachePath)) {}
+        while (arguments.read("--osm-enable-alt-ft", osmEnableAltFt)) {}
+        while (arguments.read("--osm-disable-alt-ft", osmDisableAltFt)) {}
+        while (arguments.read("--osm-max-zoom", osmMaxZoom)) {}
 
         if (arguments.errors()) return arguments.writeErrorMessages(std::cerr);
 
@@ -523,6 +535,18 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         auto perspective = vsg::EllipsoidPerspective::create(lookAt, ellipsoidModel, 35.0, aspect, 0.0005, 0.0);
         auto camera = vsg::Camera::create(perspective, lookAt, vsg::ViewportState::create(window->extent2D()));
 
+        auto runtimeOptions = vsg::Options::create();
+#ifdef VKVSG_HAS_VSGXCHANGE
+        runtimeOptions->add(vsgXchange::all::create());
+#endif
+        OsmTileManager::Config osmConfig{};
+        osmConfig.cacheRoot = osmCachePath;
+        osmConfig.enableAltitudeFt = osmEnableAltFt;
+        osmConfig.disableAltitudeFt = osmDisableAltFt;
+        osmConfig.maxZoom = std::clamp(osmMaxZoom, osmConfig.minZoom, 22);
+        auto osmTiles = OsmTileManager::create(runtimeOptions, osmConfig);
+        osmTiles->setEnabled(osmEnabled);
+
         auto commandGraph = vsg::CommandGraph::create(window);
         auto renderGraph = vsg::RenderGraph::create(window);
         commandGraph->addChild(renderGraph);
@@ -539,6 +563,11 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                   << " radius_ft=" << kWgs84EquatorialRadiusFeet
                   << " wireframe=" << (appState->wireframe ? "on" : "off")
                   << " texture=" << (appState->textureFromFile ? "file" : "procedural")
+                  << " osm=" << (osmEnabled ? "on" : "off")
+                  << " osm_cache=" << osmCachePath
+                  << " osm_enable_alt_ft=" << osmEnableAltFt
+                  << " osm_disable_alt_ft=" << osmDisableAltFt
+                  << " osm_max_zoom=" << osmConfig.maxZoom
                   << " present_mode=" << appState->ui.presentModeName
                   << " gpu_profiler=on"
                   << std::endl;
@@ -606,6 +635,22 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             appState->ui.fps = (delta > 0.0f) ? (1.0f / delta) : 0.0f;
             appState->ui.gpuFrameMs = static_cast<float>(latestVsgGpuFrameMs(*profiler));
 
+            if (osmTiles->enabled())
+            {
+                osmTiles->update(lookAt->eye, globeTransform->matrix, kWgs84EquatorialRadiusFeet, kWgs84PolarRadiusFeet);
+                if ((frameCount % 120) == 0)
+                {
+                    std::cout << "[OSM] active=" << (osmTiles->active() ? "yes" : "no")
+                              << " zoom=" << osmTiles->currentZoom()
+                              << " lat=" << osmTiles->currentLatDeg()
+                              << " lon=" << osmTiles->currentLonDeg()
+                              << " alt_ft=" << osmTiles->currentAltitudeFt()
+                              << " visible_tiles=" << osmTiles->visibleTileCount()
+                              << " cached_tiles=" << osmTiles->cachedTileCount()
+                              << std::endl;
+                }
+            }
+
             viewer->update();
             viewer->recordAndSubmit();
             viewer->present();
@@ -622,6 +667,10 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                   << " cpu_ms=" << cpuFrameMs
                   << " gpu_ms=" << appState->ui.gpuFrameMs
                   << " texture=" << (appState->textureFromFile ? "file" : "procedural")
+                  << " osm=" << (osmTiles->enabled() ? "on" : "off")
+                  << " osm_active=" << (osmTiles->active() ? "yes" : "no")
+                  << " osm_zoom=" << osmTiles->currentZoom()
+                  << " osm_cached_tiles=" << osmTiles->cachedTileCount()
                   << " present_mode=" << appState->ui.presentModeName
                   << std::endl;
     }

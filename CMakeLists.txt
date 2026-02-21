@@ -143,7 +143,7 @@ add_executable(vkraw
 
 add_dependencies(vkraw shaders)
 
-target_include_directories(vkraw PRIVATE src external/glfw/deps)
+target_include_directories(vkraw PRIVATE src external/glfw/deps external/stb)
 
 target_link_libraries(vkraw PRIVATE
     vk-bootstrap::vk-bootstrap
@@ -191,6 +191,9 @@ if(VKRAW_BUILD_VKVSG)
     add_executable(vkglobe
         src/vkglobe/main.cpp
         src/vkglobe/VsgVisualizer.cpp
+        src/vkglobe/OsmProjection.cpp
+        src/vkglobe/OsmTileFetcher.cpp
+        src/vkglobe/OsmTileManager.cpp
     )
 
     target_include_directories(vkglobe PRIVATE src)

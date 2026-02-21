@@ -358,21 +358,14 @@ void VkVisualizerApp::createTextureResources() {
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.anisotropyEnable = VK_TRUE;
-    samplerInfo.maxAnisotropy = 8.0f;
+    samplerInfo.anisotropyEnable = VK_FALSE;
+    samplerInfo.maxAnisotropy = 1.0f;
     samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
     samplerInfo.unnormalizedCoordinates = VK_FALSE;
     samplerInfo.compareEnable = VK_FALSE;
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     samplerInfo.minLod = 0.0f;
     samplerInfo.maxLod = 0.0f;
-
-    VkPhysicalDeviceFeatures supportedFeatures{};
-    vkGetPhysicalDeviceFeatures(context_.physicalDevice.physical_device, &supportedFeatures);
-    if (supportedFeatures.samplerAnisotropy != VK_TRUE) {
-        samplerInfo.anisotropyEnable = VK_FALSE;
-        samplerInfo.maxAnisotropy = 1.0f;
-    }
 
     if (vkCreateSampler(context_.device.device, &samplerInfo, nullptr, &context_.earthTextureSampler) != VK_SUCCESS) {
         throw std::runtime_error("failed to create earth texture sampler");
