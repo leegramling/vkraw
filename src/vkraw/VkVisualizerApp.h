@@ -1,6 +1,7 @@
 #pragma once
 
 #include "vkraw/CubeObject.h"
+#include "vkraw/CubeRenderTypes.h"
 #include "vkraw/UIObject.h"
 #include "vkraw/VkContext.h"
 
@@ -28,6 +29,9 @@ private:
     uint64_t frameCount_ = 0;
     float runSeconds_ = 0.0f;
     float cpuFrameMs_ = 0.0f;
+    std::vector<Vertex> sceneVertices_{};
+    std::vector<uint32_t> sceneIndices_{};
+    uint32_t sceneIndexCount_ = 0;
 
     static void framebufferResizeCallback(GLFWwindow* window, int, int);
 
@@ -65,6 +69,8 @@ private:
     void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
     void createDepthResources();
+    void rebuildSceneMesh();
+    void rebuildGpuMeshBuffers();
 
     void initImGui();
 

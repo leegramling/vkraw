@@ -95,6 +95,8 @@ void VkVisualizerApp::initVulkan() {
     createCommandPool();
     createDepthResources();
     createFramebuffers();
+    cube_.rebuildOffsets();
+    rebuildSceneMesh();
     createVertexBuffer();
     createIndexBuffer();
     createUniformBuffer();
@@ -103,7 +105,6 @@ void VkVisualizerApp::initVulkan() {
     createCommandBuffers();
     createTimestampQueryPool();
     createSyncObjects();
-    cube_.rebuildOffsets();
     initImGui();
 
     std::cout << "[START] vkraw cubes=" << cube_.cubeCount

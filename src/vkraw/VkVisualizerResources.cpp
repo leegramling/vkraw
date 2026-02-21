@@ -55,17 +55,24 @@ void VkVisualizerApp::uploadToMemory(VkDeviceMemory memory, const void* src, VkD
 }
 
 void VkVisualizerApp::createVertexBuffer() {
-    const VkDeviceSize bufferSize = sizeof(kVertices[0]) * kVertices.size();
+    const VkDeviceSize bufferSize = sizeof(Vertex) * sceneVertices_.size();
+    if (bufferSize == 0) {
+        throw std::runtime_error("scene vertex buffer is empty");
+    }
     createBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, context_.vertexBuffer, context_.vertexBufferMemory);
-    uploadToMemory(context_.vertexBufferMemory, kVertices.data(), bufferSize);
+    uploadToMemory(context_.vertexBufferMemory, sceneVertices_.data(), bufferSize);
 }
 
 void VkVisualizerApp::createIndexBuffer() {
-    const VkDeviceSize bufferSize = sizeof(kIndices[0]) * kIndices.size();
+    const VkDeviceSize bufferSize = sizeof(uint32_t) * sceneIndices_.size();
+    if (bufferSize == 0) {
+        throw std::runtime_error("scene index buffer is empty");
+    }
     createBuffer(bufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, context_.indexBuffer, context_.indexBufferMemory);
-    uploadToMemory(context_.indexBufferMemory, kIndices.data(), bufferSize);
+    uploadToMemory(context_.indexBufferMemory, sceneIndices_.data(), bufferSize);
+    sceneIndexCount_ = static_cast<uint32_t>(sceneIndices_.size());
 }
 
 void VkVisualizerApp::createUniformBuffer() {
@@ -250,6 +257,53 @@ void VkVisualizerApp::createDepthResources() {
     createImage(context_.swapchain.extent.width, context_.swapchain.extent.height, findDepthFormat(), VK_IMAGE_TILING_OPTIMAL,
                 VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, context_.depthImage, context_.depthImageMemory);
     context_.depthImageView = createImageView(context_.depthImage, context_.depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+}
+
+void VkVisualizerApp::rebuildSceneMesh() {
+    sceneVertices_.clear();
+    sceneIndices_.clear();
+
+    const size_t verticesPerCube = kVertices.size();
+    const size_t indicesPerCube = kIndices.size();
+    sceneVertices_.reserve(cube_.offsets.size() * verticesPerCube);
+    sceneIndices_.reserve(cube_.offsets.size() * indicesPerCube);
+
+    for (const glm::vec3& offset : cube_.offsets) {
+        const uint32_t baseVertex = static_cast<uint32_t>(sceneVertices_.size());
+        for (const Vertex& v : kVertices) {
+            Vertex out = v;
+            out.pos += offset;
+            sceneVertices_.push_back(out);
+        }
+        for (uint16_t idx : kIndices) {
+            sceneIndices_.push_back(baseVertex + static_cast<uint32_t>(idx));
+        }
+    }
+}
+
+void VkVisualizerApp::rebuildGpuMeshBuffers() {
+    vkDeviceWaitIdle(context_.device.device);
+
+    if (context_.vertexBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(context_.device.device, context_.vertexBuffer, nullptr);
+        context_.vertexBuffer = VK_NULL_HANDLE;
+    }
+    if (context_.vertexBufferMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(context_.device.device, context_.vertexBufferMemory, nullptr);
+        context_.vertexBufferMemory = VK_NULL_HANDLE;
+    }
+    if (context_.indexBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(context_.device.device, context_.indexBuffer, nullptr);
+        context_.indexBuffer = VK_NULL_HANDLE;
+    }
+    if (context_.indexBufferMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(context_.device.device, context_.indexBufferMemory, nullptr);
+        context_.indexBufferMemory = VK_NULL_HANDLE;
+    }
+
+    rebuildSceneMesh();
+    createVertexBuffer();
+    createIndexBuffer();
 }
 
 } // namespace vkraw

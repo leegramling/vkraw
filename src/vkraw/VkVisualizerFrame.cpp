@@ -67,16 +67,14 @@ void VkVisualizerApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_
     VkBuffer vertexBuffers[] = {context_.vertexBuffer};
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-    vkCmdBindIndexBuffer(commandBuffer, context_.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdBindIndexBuffer(commandBuffer, context_.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, context_.pipelineLayout, 0, 1, &context_.descriptorSet, 0, nullptr);
 
     const glm::mat4 baseRotation = computeBaseRotation(elapsedSeconds);
-    for (const glm::vec3& offset : cube_.offsets) {
-        PushConstantData push{};
-        push.model = glm::translate(baseRotation, offset);
-        vkCmdPushConstants(commandBuffer, context_.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstantData), &push);
-        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(kIndices.size()), 1, 0, 0, 0);
-    }
+    PushConstantData push{};
+    push.model = baseRotation;
+    vkCmdPushConstants(commandBuffer, context_.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstantData), &push);
+    vkCmdDrawIndexed(commandBuffer, sceneIndexCount_, 1, 0, 0, 0);
 
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 
@@ -139,6 +137,7 @@ void VkVisualizerApp::drawFrame(float deltaSeconds, float elapsedSeconds) {
     ui_.gpuFrameMs = gpuFrameMs_;
     if (ui_.draw(cube_, presentModeToString(context_.selectedPresentMode), context_.gpuTimestampQueryPool != VK_NULL_HANDLE)) {
         cube_.rebuildOffsets();
+        rebuildGpuMeshBuffers();
     }
 
     ImGui::Render();
