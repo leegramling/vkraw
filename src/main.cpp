@@ -183,7 +183,7 @@ class App {
     float yaw_ = 30.0f;
     float pitch_ = 20.0f;
     float autoSpinSpeedDeg_ = 22.5f;
-    int cubeCount_ = 4096;
+    int cubeCount_ = 100000;
     float fps_ = 0.0f;
     bool showDemoWindow_ = true;
     std::vector<glm::vec3> cubeOffsets_;
@@ -1074,7 +1074,7 @@ class App {
         ImGui::SliderFloat("Yaw", &yaw_, -180.0f, 180.0f);
         ImGui::SliderFloat("Pitch", &pitch_, -89.0f, 89.0f);
         ImGui::SliderFloat("Auto spin (deg/s)", &autoSpinSpeedDeg_, -180.0f, 180.0f);
-        if (ImGui::SliderInt("Cube count", &cubeCount_, 1, 20000)) {
+        if (ImGui::SliderInt("Cube count", &cubeCount_, 20000, 100000)) {
             rebuildCubeOffsets();
         }
         fps_ = (deltaSeconds > 0.0f) ? (1.0f / deltaSeconds) : 0.0f;

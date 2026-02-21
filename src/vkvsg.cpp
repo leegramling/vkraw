@@ -15,7 +15,7 @@ struct UiState : public vsg::Inherit<vsg::Object, UiState>
     float yaw = 30.0f;
     float pitch = 20.0f;
     float autoSpinDegPerSec = 22.5f;
-    int cubeCount = 4096;
+    int cubeCount = 100000;
     bool showDemoWindow = true;
     float deltaTimeMs = 0.0f;
     float fps = 0.0f;
@@ -87,7 +87,7 @@ public:
         ImGui::SliderFloat("Yaw", &uiState->yaw, -180.0f, 180.0f);
         ImGui::SliderFloat("Pitch", &uiState->pitch, -89.0f, 89.0f);
         ImGui::SliderFloat("Auto spin (deg/s)", &uiState->autoSpinDegPerSec, -180.0f, 180.0f);
-        ImGui::SliderInt("Cube count", &uiState->cubeCount, 1, 20000);
+        ImGui::SliderInt("Cube count", &uiState->cubeCount, 20000, 100000);
         ImGui::Text("FPS %.1f", uiState->fps);
         ImGui::Text("Frame time %.3f ms", uiState->deltaTimeMs);
         ImGui::Text("Present mode %s", uiState->presentModeName);
