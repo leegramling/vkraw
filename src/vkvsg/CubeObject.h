@@ -13,10 +13,20 @@ public:
     float yaw = 30.0f;
     float pitch = 20.0f;
     float autoSpinDegPerSec = 22.5f;
-    int cubeCount = 100000;
+    int latitudeSegments = 180;
+    int longitudeSegments = 360;
 
-    uint64_t triangles() const { return static_cast<uint64_t>(cubeCount) * 12ULL; }
-    uint64_t vertices() const { return static_cast<uint64_t>(cubeCount) * 8ULL; }
+    uint64_t triangles() const
+    {
+        return static_cast<uint64_t>(std::max(2, latitudeSegments)) *
+               static_cast<uint64_t>(std::max(3, longitudeSegments)) * 2ULL;
+    }
+
+    uint64_t vertices() const
+    {
+        return static_cast<uint64_t>(std::max(2, latitudeSegments) + 1) *
+               static_cast<uint64_t>(std::max(3, longitudeSegments) + 1);
+    }
 
     void applyInput(bool left, bool right, bool up, bool down, float dt)
     {

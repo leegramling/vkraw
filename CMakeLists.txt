@@ -37,6 +37,7 @@ if(VKRAW_BUILD_VKVSG)
     endif()
     find_package(vsg CONFIG REQUIRED)
     find_package(vsgImGui CONFIG REQUIRED)
+    find_package(vsgXchange CONFIG QUIET)
 endif()
 
 add_library(imgui STATIC
@@ -155,6 +156,11 @@ if(VKRAW_BUILD_VKVSG)
         vsg::vsg
         vsgImGui::vsgImGui
     )
+
+    if(vsgXchange_FOUND)
+        target_link_libraries(vkvsg PRIVATE vsgXchange::vsgXchange)
+        target_compile_definitions(vkvsg PRIVATE VKVSG_HAS_VSGXCHANGE)
+    endif()
 
     if(WIN32)
         target_compile_definitions(vkvsg PRIVATE VK_USE_PLATFORM_WIN32_KHR)
