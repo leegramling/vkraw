@@ -1,5 +1,6 @@
 #include "vkraw/setup/SwapchainSetup.h"
 
+#include <iostream>
 #include <stdexcept>
 
 namespace vkraw::setup {
@@ -9,22 +10,32 @@ void createSwapchain(VkContext& context, GLFWwindow* window)
     int width = 0;
     int height = 0;
     glfwGetFramebufferSize(window, &width, &height);
-
-    auto buildSwapchainWithMode = [&](VkPresentModeKHR mode) {
-        vkb::SwapchainBuilder builder(context.device);
-        return builder.set_desired_extent(static_cast<uint32_t>(width), static_cast<uint32_t>(height))
-            .set_desired_present_mode(mode)
-            .set_old_swapchain(context.swapchain)
-            .build();
-    };
-
-    auto swapchainRet = buildSwapchainWithMode(VK_PRESENT_MODE_IMMEDIATE_KHR);
-    if (!swapchainRet) {
-        swapchainRet = buildSwapchainWithMode(VK_PRESENT_MODE_FIFO_KHR);
+    while (width == 0 || height == 0) {
+        glfwWaitEvents();
+        glfwGetFramebufferSize(window, &width, &height);
     }
 
+    auto buildSwapchainWithMode = [&](VkPresentModeKHR mode, bool useOldSwapchain) {
+        vkb::SwapchainBuilder builder(context.device);
+        builder.set_desired_extent(static_cast<uint32_t>(width), static_cast<uint32_t>(height)).set_desired_present_mode(mode);
+        if (useOldSwapchain && context.swapchain.swapchain != VK_NULL_HANDLE) {
+            builder.set_old_swapchain(context.swapchain);
+        }
+        return builder.build();
+    };
+
+    auto swapchainRet = buildSwapchainWithMode(VK_PRESENT_MODE_IMMEDIATE_KHR, true);
     if (!swapchainRet) {
-        throw std::runtime_error(swapchainRet.error().message());
+        swapchainRet = buildSwapchainWithMode(VK_PRESENT_MODE_FIFO_KHR, true);
+    }
+    if (!swapchainRet) {
+        swapchainRet = buildSwapchainWithMode(VK_PRESENT_MODE_IMMEDIATE_KHR, false);
+    }
+    if (!swapchainRet) {
+        swapchainRet = buildSwapchainWithMode(VK_PRESENT_MODE_FIFO_KHR, false);
+    }
+    if (!swapchainRet) {
+        throw std::runtime_error(std::string("failed to create swapchain: ") + swapchainRet.error().message());
     }
 
     if (context.swapchain.swapchain != VK_NULL_HANDLE) {

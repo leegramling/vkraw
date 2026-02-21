@@ -39,6 +39,10 @@ struct VkContext {
     VkDeviceMemory depthImageMemory = VK_NULL_HANDLE;
     VkImageView depthImageView = VK_NULL_HANDLE;
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
+    VkImage earthTextureImage = VK_NULL_HANDLE;
+    VkDeviceMemory earthTextureMemory = VK_NULL_HANDLE;
+    VkImageView earthTextureView = VK_NULL_HANDLE;
+    VkSampler earthTextureSampler = VK_NULL_HANDLE;
 
     VkBuffer vertexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;

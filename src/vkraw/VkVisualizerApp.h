@@ -1,7 +1,9 @@
 #pragma once
 
-#include "vkraw/CubeObject.h"
 #include "vkraw/CubeRenderTypes.h"
+#include "vkraw/EcsWorld.h"
+#include "vkraw/GlobeObject.h"
+#include "vkraw/SceneGraph.h"
 #include "vkraw/UIObject.h"
 #include "vkraw/VkContext.h"
 
@@ -17,6 +19,7 @@ class VkVisualizerApp {
 public:
     void run();
     void setRunDurationSeconds(float seconds) { runDurationSeconds_ = seconds; }
+    void setEarthTexturePath(std::string path) { earthTexturePath_ = std::move(path); }
 
 private:
     static constexpr uint32_t kWindowWidth = 1280;
@@ -24,13 +27,20 @@ private:
 
     VkContext context_{};
 
-    CubeObject cube_{};
+    GlobeObject globe_{};
+    SceneGraph sceneGraph_{};
+    EcsWorld ecs_{};
+    SceneNodeId globeSceneNode_ = 0;
+    EntityId globeEntity_ = 0;
     UIObject ui_{};
     float gpuFrameMs_ = 0.0f;
     uint64_t frameCount_ = 0;
     float runSeconds_ = 0.0f;
     float cpuFrameMs_ = 0.0f;
     float runDurationSeconds_ = 0.0f;
+    std::string earthTexturePath_{};
+    bool textureLoadedFromFile_ = false;
+    std::string textureSourceLabel_ = "procedural";
     std::vector<Vertex> sceneVertices_{};
     std::vector<uint32_t> sceneIndices_{};
     uint32_t sceneIndexCount_ = 0;
@@ -61,6 +71,7 @@ private:
     void createVertexBuffer();
     void createIndexBuffer();
     void createUniformBuffer();
+    void createTextureResources();
     void createDescriptorPool();
     void createDescriptorSet();
     void createCommandBuffers();
@@ -70,9 +81,15 @@ private:
     VkFormat findDepthFormat();
     void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
+    VkCommandBuffer beginSingleTimeCommands();
+    void endSingleTimeCommands(VkCommandBuffer commandBuffer);
+    void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
     void createDepthResources();
+    void destroyTextureResources();
     void rebuildSceneMesh();
     void rebuildGpuMeshBuffers();
+    void initSceneSystems();
 
     void initImGui();
 

@@ -27,6 +27,9 @@ add_subdirectory(external/glfw)
 add_subdirectory(external/glm)
 
 find_package(Vulkan REQUIRED)
+find_package(JPEG REQUIRED)
+find_package(PNG REQUIRED)
+find_package(TIFF REQUIRED)
 
 set(VSG_DEPS_INSTALL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../vsg_deps/install" CACHE PATH "Path to prebuilt VSG dependencies install prefix")
 option(VKRAW_BUILD_VKVSG "Build VSG-based renderer target (vkvsg)" ON)
@@ -134,6 +137,9 @@ target_link_libraries(vkraw PRIVATE
     glfw
     glm::glm
     imgui
+    JPEG::JPEG
+    PNG::PNG
+    TIFF::TIFF
     Vulkan::Vulkan
 )
 

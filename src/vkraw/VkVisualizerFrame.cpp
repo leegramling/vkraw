@@ -14,7 +14,7 @@
 namespace vkraw {
 
 void VkVisualizerApp::processInput(float deltaSeconds) {
-    cube_.processInput(context_.window, deltaSeconds);
+    globe_.processInput(context_.window, deltaSeconds);
 }
 
 void VkVisualizerApp::updateUniformBuffer() {
@@ -30,7 +30,7 @@ void VkVisualizerApp::updateUniformBuffer() {
 }
 
 glm::mat4 VkVisualizerApp::computeBaseRotation(float elapsedSeconds) const {
-    return cube_.computeBaseRotation(elapsedSeconds);
+    return globe_.computeBaseRotation(elapsedSeconds);
 }
 
 void VkVisualizerApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, float elapsedSeconds, size_t frameIndex) {
@@ -135,8 +135,8 @@ void VkVisualizerApp::drawFrame(float deltaSeconds, float elapsedSeconds) {
     ui_.fps = (deltaSeconds > 0.0f) ? (1.0f / deltaSeconds) : 0.0f;
     ui_.frameTimeMs = 1000.0f * deltaSeconds;
     ui_.gpuFrameMs = gpuFrameMs_;
-    if (ui_.draw(cube_, presentModeToString(context_.selectedPresentMode), context_.gpuTimestampQueryPool != VK_NULL_HANDLE)) {
-        cube_.rebuildOffsets();
+    if (ui_.draw(globe_, presentModeToString(context_.selectedPresentMode), context_.gpuTimestampQueryPool != VK_NULL_HANDLE, sceneGraph_.nodeCount(),
+                 sceneGraph_.visibleNodeCount(), ecs_.entityCount(), ecs_.visibleCount())) {
         rebuildGpuMeshBuffers();
     }
 

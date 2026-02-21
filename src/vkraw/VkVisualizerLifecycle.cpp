@@ -96,11 +96,12 @@ void VkVisualizerApp::initVulkan() {
     createCommandPool();
     createDepthResources();
     createFramebuffers();
-    cube_.rebuildOffsets();
+    initSceneSystems();
     rebuildSceneMesh();
     createVertexBuffer();
     createIndexBuffer();
     createUniformBuffer();
+    createTextureResources();
     createDescriptorPool();
     createDescriptorSet();
     createCommandBuffers();
@@ -108,7 +109,10 @@ void VkVisualizerApp::initVulkan() {
     createSyncObjects();
     initImGui();
 
-    std::cout << "[START] vkraw cubes=" << cube_.cubeCount
+    std::cout << "[START] vkraw globe=true"
+              << " lat_segments=" << globe_.latitudeSegments
+              << " lon_segments=" << globe_.longitudeSegments
+              << " texture=" << textureSourceLabel_
               << " present_mode=" << presentModeToString(context_.selectedPresentMode)
               << " timestamps=" << (context_.gpuTimestampQueryPool != VK_NULL_HANDLE ? "on" : "off")
               << std::endl;
@@ -179,17 +183,19 @@ void VkVisualizerApp::mainLoop() {
     }
 
     vkDeviceWaitIdle(context_.device.device);
-    const uint64_t triangles = cube_.triangles();
-    const uint64_t vertices = cube_.vertices();
+    const uint64_t triangles = globe_.triangles();
+    const uint64_t vertices = globe_.vertices();
     std::cout << "[EXIT] vkraw status=OK code=0"
               << " frames=" << frameCount_
               << " seconds=" << runSeconds_
-              << " cubes=" << cube_.cubeCount
+              << " lat_segments=" << globe_.latitudeSegments
+              << " lon_segments=" << globe_.longitudeSegments
               << " triangles=" << triangles
               << " vertices=" << vertices
               << " fps=" << ui_.fps
               << " cpu_ms=" << cpuFrameMs_
               << " gpu_ms=" << gpuFrameMs_
+              << " texture=" << textureSourceLabel_
               << " present_mode=" << presentModeToString(context_.selectedPresentMode)
               << std::endl;
 }
@@ -269,6 +275,7 @@ void VkVisualizerApp::cleanup() {
     if (context_.uniformBufferMemory != VK_NULL_HANDLE) {
         vkFreeMemory(context_.device.device, context_.uniformBufferMemory, nullptr);
     }
+    destroyTextureResources();
     if (context_.indexBuffer != VK_NULL_HANDLE) {
         vkDestroyBuffer(context_.device.device, context_.indexBuffer, nullptr);
     }
@@ -323,6 +330,8 @@ int runVkrawApp(int argc, char** argv)
             const std::string arg = argv[i];
             if ((arg == "--seconds" || arg == "--duration") && (i + 1) < argc) {
                 visualizer.setRunDurationSeconds(std::stof(argv[++i]));
+            } else if (arg == "--earth-texture" && (i + 1) < argc) {
+                visualizer.setEarthTexturePath(argv[++i]);
             }
         }
         visualizer.run();
