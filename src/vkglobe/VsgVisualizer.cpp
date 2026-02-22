@@ -638,6 +638,13 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         viewer->addEventHandler(globeRotateHandler);
         viewer->addEventHandler(inputHandler);
 
+        if (osmTiles->enabled())
+        {
+            // Build initial OSM tile nodes before first viewer->compile().
+            osmTiles->update(lookAt->eye, globeTransform->matrix, kWgs84EquatorialRadiusFeet, kWgs84PolarRadiusFeet);
+            osmTileLayer->syncFromTileWindow(osmTiles->currentTileWindow());
+        }
+
         viewer->assignRecordAndSubmitTaskAndPresentation({commandGraph});
         viewer->compile();
 
@@ -696,11 +703,6 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             {
                 osmTiles->update(lookAt->eye, globeTransform->matrix, kWgs84EquatorialRadiusFeet, kWgs84PolarRadiusFeet);
                 const auto tileWindow = osmTiles->currentTileWindow();
-                const bool tilesChanged = osmTileLayer->syncFromTileWindow(tileWindow);
-                if (tilesChanged)
-                {
-                    viewer->compile();
-                }
                 if ((frameCount % 120) == 0)
                 {
                     std::cout << "[OSM] active=" << (osmTiles->active() ? "yes" : "no")
