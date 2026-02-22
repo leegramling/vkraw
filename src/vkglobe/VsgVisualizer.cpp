@@ -632,7 +632,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
 
         ImGuiIO& io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-        io.MouseDrawCursor = true;
+        io.MouseDrawCursor = false;
         ImGui::GetStyle().ScaleAllSizes(1.5f);
         io.FontGlobalScale = 1.5f;
 

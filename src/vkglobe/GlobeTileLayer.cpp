@@ -99,7 +99,7 @@ vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key) const
                 z / (polarRadiusFt_ * polarRadiusFt_));
             n = vsg::normalize(n);
             (*normals)[idx] = vsg::vec3(static_cast<float>(n.x), static_cast<float>(n.y), static_cast<float>(n.z));
-            (*texcoords)[idx] = vsg::vec2(static_cast<float>(u), static_cast<float>(1.0 - v));
+            (*texcoords)[idx] = vsg::vec2(static_cast<float>(u), static_cast<float>(v));
         }
     }
 
