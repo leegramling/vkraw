@@ -554,7 +554,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             return 1;
         }
         globeTransform->addChild(globeNode);
-        auto osmTileLayer = GlobeTileLayer::create(kWgs84EquatorialRadiusFeet * 1.0005, kWgs84PolarRadiusFeet * 1.0005);
+        auto osmTileLayer = GlobeTileLayer::create(kWgs84EquatorialRadiusFeet * 1.0020, kWgs84PolarRadiusFeet * 1.0020);
         globeTransform->addChild(osmTileLayer->root());
 
         const double aspect = static_cast<double>(window->extent2D().width) / static_cast<double>(window->extent2D().height);
