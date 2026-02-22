@@ -173,11 +173,9 @@ vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key, vsg::r
 bool GlobeTileLayer::assignTileImage(vsg::StateGroup& stateGroup, vsg::ref_ptr<vsg::Data> image) const
 {
     if (!image) return false;
-    for (auto& sc : stateGroup.stateCommands)
+    auto tryDescriptorSet = [&](vsg::DescriptorSet& descriptorSet) -> bool
     {
-        auto bds = sc.cast<vsg::BindDescriptorSet>();
-        if (!bds || !bds->descriptorSet) continue;
-        for (auto& descriptor : bds->descriptorSet->descriptors)
+        for (auto& descriptor : descriptorSet.descriptors)
         {
             auto di = descriptor.cast<vsg::DescriptorImage>();
             if (!di || di->imageInfoList.empty() || !di->imageInfoList.front()) continue;
@@ -185,6 +183,22 @@ bool GlobeTileLayer::assignTileImage(vsg::StateGroup& stateGroup, vsg::ref_ptr<v
             imageInfo->imageView = vsg::ImageView::create(vsg::Image::create(image));
             imageInfo->imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             return true;
+        }
+        return false;
+    };
+
+    for (auto& sc : stateGroup.stateCommands)
+    {
+        if (auto bds = sc.cast<vsg::BindDescriptorSet>(); bds && bds->descriptorSet)
+        {
+            if (tryDescriptorSet(*bds->descriptorSet)) return true;
+        }
+        if (auto bdss = sc.cast<vsg::BindDescriptorSets>(); bdss)
+        {
+            for (auto& ds : bdss->descriptorSets)
+            {
+                if (ds && tryDescriptorSet(*ds)) return true;
+            }
         }
     }
     return false;
