@@ -124,9 +124,15 @@ vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key) const
     }
 
     auto vid = vsg::VertexIndexDraw::create();
-    auto colors = vsg::vec4Array::create(1);
+    auto colors = vsg::vec4Array::create(numVertices);
     // Debug tint so OSM patches are visually obvious during integration.
-    (*colors)[0] = vsg::vec4(1.0f, 0.65f, 0.65f, 1.0f);
+    const float tintR = 0.45f + 0.5f * static_cast<float>((key.x * 17) & 7) / 7.0f;
+    const float tintG = 0.45f + 0.5f * static_cast<float>((key.y * 11) & 7) / 7.0f;
+    const float tintB = 0.45f + 0.5f * static_cast<float>((key.z * 3) & 7) / 7.0f;
+    for (uint32_t i = 0; i < numVertices; ++i)
+    {
+        (*colors)[i] = vsg::vec4(tintR, tintG, tintB, 1.0f);
+    }
     vid->assignArrays(vsg::DataList{vertices, normals, texcoords, colors});
     vid->assignIndices(indices);
     vid->indexCount = static_cast<uint32_t>(indices->size());

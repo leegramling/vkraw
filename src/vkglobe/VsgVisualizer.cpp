@@ -560,7 +560,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             return 1;
         }
         auto globeMeshNode = globeStateGroup->children.front();
-        const bool hideBaseGlobeForOsmDebug = osmEnabled;
+        const bool hideBaseGlobeForOsmDebug = false;
         globeTransform->addChild(globeNode);
         auto osmTileLayer = GlobeTileLayer::create(kWgs84EquatorialRadiusFeet * 1.00002, kWgs84PolarRadiusFeet * 1.00002);
         globeStateGroup->addChild(osmTileLayer->root());
