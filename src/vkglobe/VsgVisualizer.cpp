@@ -15,8 +15,12 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
+#include <regex>
+#include <sstream>
 #include <string>
 
 namespace
@@ -47,11 +51,14 @@ struct AppState : public vsg::Inherit<vsg::Object, AppState>
     bool exitRequested = false;
     bool showSettingsWindow = true;
     bool settingsApplyRequested = false;
+    bool settingsSaveRequested = false;
     bool osmEnabledSetting = false;
     int osmMaxZoomSetting = 19;
     float osmEnableAltFtSetting = 10000.0f;
     float osmDisableAltFtSetting = 15000.0f;
     std::string osmCachePathSetting;
+    std::string earthTexturePathSetting;
+    std::string configPathSetting = "vsgglobe.json";
     bool osmEnabled = false;
     bool osmActive = false;
     int osmZoom = 0;
@@ -289,7 +296,12 @@ public:
             state->osmDisableAltFtSetting = std::max(state->osmEnableAltFtSetting + 1.0f, state->osmDisableAltFtSetting);
             ImGui::Separator();
             ImGui::Text("OSM Cache: %s", state->osmCachePathSetting.c_str());
+            ImGui::Text("Earth Texture: %s", state->earthTexturePathSetting.empty() ? "(procedural fallback)" : state->earthTexturePathSetting.c_str());
+            ImGui::Text("Config File: %s", state->configPathSetting.c_str());
             ImGui::Text("Startup flags still set initial values.");
+            if (ImGui::Button("Apply")) state->settingsApplyRequested = true;
+            ImGui::SameLine();
+            if (ImGui::Button("Save to vsgglobe.json")) state->settingsSaveRequested = true;
             if (changed) state->settingsApplyRequested = true;
             ImGui::End();
         }
@@ -343,6 +355,132 @@ vsg::ref_ptr<vsg::Data> createProceduralEarthTexture()
 
     tex->dirty();
     return tex;
+}
+
+struct SavedSettings
+{
+    std::string earthTexturePath;
+    bool osmEnabled = false;
+    std::string osmCachePath = "cache/osm";
+    double osmEnableAltFt = 10000.0;
+    double osmDisableAltFt = 15000.0;
+    int osmMaxZoom = 19;
+};
+
+std::string jsonEscape(const std::string& s)
+{
+    std::string out;
+    out.reserve(s.size() + 8);
+    for (char ch : s)
+    {
+        switch (ch)
+        {
+            case '\\': out += "\\\\"; break;
+            case '"': out += "\\\""; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default: out += ch; break;
+        }
+    }
+    return out;
+}
+
+std::string jsonUnescape(const std::string& s)
+{
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); ++i)
+    {
+        if (s[i] != '\\' || (i + 1) >= s.size())
+        {
+            out += s[i];
+            continue;
+        }
+        const char n = s[++i];
+        switch (n)
+        {
+            case '\\': out += '\\'; break;
+            case '"': out += '"'; break;
+            case 'n': out += '\n'; break;
+            case 'r': out += '\r'; break;
+            case 't': out += '\t'; break;
+            default: out += n; break;
+        }
+    }
+    return out;
+}
+
+bool parseJsonStringField(const std::string& text, const char* key, std::string& out)
+{
+    const std::regex re(std::string("\"") + key + R"__("\s*:\s*"((?:\\.|[^"])*)")__");
+    std::smatch m;
+    if (!std::regex_search(text, m, re)) return false;
+    out = jsonUnescape(m[1].str());
+    return true;
+}
+
+bool parseJsonBoolField(const std::string& text, const char* key, bool& out)
+{
+    const std::regex re(std::string("\"") + key + R"__("\s*:\s*(true|false))__");
+    std::smatch m;
+    if (!std::regex_search(text, m, re)) return false;
+    out = (m[1].str() == "true");
+    return true;
+}
+
+bool parseJsonIntField(const std::string& text, const char* key, int& out)
+{
+    const std::regex re(std::string("\"") + key + R"__("\s*:\s*(-?\d+))__");
+    std::smatch m;
+    if (!std::regex_search(text, m, re)) return false;
+    out = std::stoi(m[1].str());
+    return true;
+}
+
+bool parseJsonDoubleField(const std::string& text, const char* key, double& out)
+{
+    const std::regex re(std::string("\"") + key + R"__("\s*:\s*(-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?))__");
+    std::smatch m;
+    if (!std::regex_search(text, m, re)) return false;
+    out = std::stod(m[1].str());
+    return true;
+}
+
+bool loadSavedSettings(const std::string& path, SavedSettings& settings)
+{
+    std::ifstream in(path);
+    if (!in) return false;
+    std::stringstream buffer;
+    buffer << in.rdbuf();
+    const std::string text = buffer.str();
+
+    parseJsonStringField(text, "earth_texture", settings.earthTexturePath);
+    parseJsonBoolField(text, "osm_enabled", settings.osmEnabled);
+    parseJsonStringField(text, "osm_cache", settings.osmCachePath);
+    parseJsonDoubleField(text, "osm_enable_alt_ft", settings.osmEnableAltFt);
+    parseJsonDoubleField(text, "osm_disable_alt_ft", settings.osmDisableAltFt);
+    parseJsonIntField(text, "osm_max_zoom", settings.osmMaxZoom);
+    return true;
+}
+
+bool saveSavedSettings(const std::string& path, const SavedSettings& settings)
+{
+    std::error_code ec;
+    const auto parent = std::filesystem::path(path).parent_path();
+    if (!parent.empty()) std::filesystem::create_directories(parent, ec);
+
+    std::ofstream out(path, std::ios::trunc);
+    if (!out) return false;
+    out << "{\n"
+        << "  \"earth_texture\": \"" << jsonEscape(settings.earthTexturePath) << "\",\n"
+        << "  \"osm_enabled\": " << (settings.osmEnabled ? "true" : "false") << ",\n"
+        << "  \"osm_cache\": \"" << jsonEscape(settings.osmCachePath) << "\",\n"
+        << "  \"osm_enable_alt_ft\": " << settings.osmEnableAltFt << ",\n"
+        << "  \"osm_disable_alt_ft\": " << settings.osmDisableAltFt << ",\n"
+        << "  \"osm_max_zoom\": " << settings.osmMaxZoom << "\n"
+        << "}\n";
+    return out.good();
 }
 
 vsg::ref_ptr<vsg::Data> loadEarthTexture(const std::string& texturePath, bool& loadedFromFile)
@@ -545,10 +683,24 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         double osmEnableAltFt = 10000.0;
         double osmDisableAltFt = 15000.0;
         int osmMaxZoom = 19;
+        std::string configPath = "vsgglobe.json";
         arguments.read("--seconds", runDurationSeconds);
         arguments.read("--duration", runDurationSeconds);
+        while (arguments.read("--config", configPath)) {}
+
+        SavedSettings savedSettings{};
+        if (loadSavedSettings(configPath, savedSettings))
+        {
+            earthTexturePath = savedSettings.earthTexturePath;
+            osmEnabled = savedSettings.osmEnabled;
+            osmCachePath = savedSettings.osmCachePath;
+            osmEnableAltFt = savedSettings.osmEnableAltFt;
+            osmDisableAltFt = savedSettings.osmDisableAltFt;
+            osmMaxZoom = savedSettings.osmMaxZoom;
+        }
+
         while (arguments.read("--earth-texture", earthTexturePath)) {}
-        while (arguments.read("--osm")) osmEnabled = true;
+        while (arguments.read("--osm")) { osmEnabled = true; }
         while (arguments.read("--osm-cache", osmCachePath)) {}
         while (arguments.read("--osm-enable-alt-ft", osmEnableAltFt)) {}
         while (arguments.read("--osm-disable-alt-ft", osmDisableAltFt)) {}
@@ -578,6 +730,8 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         appState->osmEnableAltFtSetting = static_cast<float>(osmEnableAltFt);
         appState->osmDisableAltFtSetting = static_cast<float>(osmDisableAltFt);
         appState->osmCachePathSetting = osmCachePath;
+        appState->earthTexturePathSetting = earthTexturePath;
+        appState->configPathSetting = configPath;
         bool loadedFromFile = false;
         auto globeNode = createGlobeNode(earthTexturePath, appState->wireframe, loadedFromFile);
         appState->textureFromFile = loadedFromFile;
@@ -762,6 +916,23 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                 osmTiles->setEnabled(appState->osmEnabledSetting);
                 osmTiles->setMaxZoom(appState->osmMaxZoomSetting);
                 osmTiles->setActivationAltitudes(appState->osmEnableAltFtSetting, appState->osmDisableAltFtSetting);
+                appState->settingsSaveRequested = true;
+            }
+
+            if (appState->settingsSaveRequested)
+            {
+                appState->settingsSaveRequested = false;
+                SavedSettings toSave{};
+                toSave.earthTexturePath = appState->earthTexturePathSetting;
+                toSave.osmEnabled = appState->osmEnabledSetting;
+                toSave.osmCachePath = appState->osmCachePathSetting;
+                toSave.osmEnableAltFt = appState->osmEnableAltFtSetting;
+                toSave.osmDisableAltFt = appState->osmDisableAltFtSetting;
+                toSave.osmMaxZoom = appState->osmMaxZoomSetting;
+                if (!saveSavedSettings(appState->configPathSetting, toSave))
+                {
+                    std::cerr << "[Settings] failed to save " << appState->configPathSetting << std::endl;
+                }
             }
 
             bool osmCurrentlyActive = false;
@@ -825,6 +996,15 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
 
         profiler->finish();
         appState->ui.gpuFrameMs = static_cast<float>(latestVsgGpuFrameMs(*profiler));
+
+        SavedSettings toSave{};
+        toSave.earthTexturePath = appState->earthTexturePathSetting;
+        toSave.osmEnabled = appState->osmEnabledSetting;
+        toSave.osmCachePath = appState->osmCachePathSetting;
+        toSave.osmEnableAltFt = appState->osmEnableAltFtSetting;
+        toSave.osmDisableAltFt = appState->osmDisableAltFtSetting;
+        toSave.osmMaxZoom = appState->osmMaxZoomSetting;
+        (void)saveSavedSettings(appState->configPathSetting, toSave);
 
         std::cout << "[EXIT] vkglobe status=OK code=0"
                   << " frames=" << frameCount
