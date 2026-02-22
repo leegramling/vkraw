@@ -726,7 +726,17 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             {
                 osmTiles->update(lookAt->eye, globeTransform->matrix, kWgs84EquatorialRadiusFeet, kWgs84PolarRadiusFeet);
                 const auto tileWindow = osmTiles->currentTileWindow();
-                osmTileLayer->syncFromTileWindow(tileWindow);
+                const bool tileSceneChanged = osmTileLayer->syncFromTileWindow(tileWindow);
+                if (tileSceneChanged && viewer->compileManager)
+                {
+                    viewer->deviceWaitIdle();
+                    auto result = viewer->compileManager->compile(osmTileLayer->root());
+                    if (result.requiresViewerUpdate()) vsg::updateViewer(*viewer, result);
+                    if (!result)
+                    {
+                        std::cerr << "[OSM] runtime compile failed: " << result.message << std::endl;
+                    }
+                }
                 if ((frameCount % 120) == 0)
                 {
                     std::cout << "[OSM] active=" << (osmTiles->active() ? "yes" : "no")
