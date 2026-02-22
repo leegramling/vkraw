@@ -34,7 +34,10 @@ public:
         ImGui::Text("OSM cached tiles: %llu", static_cast<unsigned long long>(osmCachedTiles));
         ImGui::End();
 
-        ImGui::ShowDemoWindow(&showDemoWindow);
+        if (showDemoWindow)
+        {
+            ImGui::ShowDemoWindow(&showDemoWindow);
+        }
     }
 };
 
