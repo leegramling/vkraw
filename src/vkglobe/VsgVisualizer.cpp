@@ -58,7 +58,7 @@ struct AppState : public vsg::Inherit<vsg::Object, AppState>
     float osmDisableAltFtSetting = 15000.0f;
     std::string osmCachePathSetting;
     std::string earthTexturePathSetting;
-    std::string configPathSetting = "vsgglobe.json";
+    std::string configPathSetting = "vkglobe.json";
     bool osmEnabled = false;
     bool osmActive = false;
     int osmZoom = 0;
@@ -301,7 +301,7 @@ public:
             ImGui::Text("Startup flags still set initial values.");
             if (ImGui::Button("Apply")) state->settingsApplyRequested = true;
             ImGui::SameLine();
-            if (ImGui::Button("Save to vsgglobe.json")) state->settingsSaveRequested = true;
+            if (ImGui::Button("Save to vkglobe.json")) state->settingsSaveRequested = true;
             if (changed) state->settingsApplyRequested = true;
             ImGui::End();
         }
@@ -683,7 +683,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         double osmEnableAltFt = 10000.0;
         double osmDisableAltFt = 15000.0;
         int osmMaxZoom = 19;
-        std::string configPath = "vsgglobe.json";
+        std::string configPath = "vkglobe.json";
         arguments.read("--seconds", runDurationSeconds);
         arguments.read("--duration", runDurationSeconds);
         while (arguments.read("--config", configPath)) {}
