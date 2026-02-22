@@ -39,6 +39,7 @@ private:
 
     vsg::ref_ptr<vsg::Node> buildTileNode(const TileKey& key, vsg::ref_ptr<vsg::Data> image) const;
     bool assignTileImage(vsg::StateGroup& stateGroup, vsg::ref_ptr<vsg::Data> image) const;
+    void localizeDescriptorCommands(vsg::StateGroup& stateGroup) const;
 
     double equatorialRadiusFt_ = 0.0;
     double polarRadiusFt_ = 0.0;

@@ -198,14 +198,26 @@ vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key, vsg::r
     vid->assignIndices(indices);
     vid->indexCount = static_cast<uint32_t>(indices->size());
     vid->instanceCount = 1;
-    vsg::CopyOp copyop;
-    copyop.duplicate = vsg::ref_ptr<vsg::Duplicate>(new vsg::Duplicate);
-    auto tileState = stateTemplate_->clone(copyop).cast<vsg::StateGroup>();
+    auto tileState = vsg::clone(stateTemplate_).cast<vsg::StateGroup>();
     if (!tileState) return {};
+    localizeDescriptorCommands(*tileState);
     if (!assignTileImage(*tileState, image)) return {};
     tileState->children.clear();
     tileState->addChild(vid);
     return tileState;
+}
+
+void GlobeTileLayer::localizeDescriptorCommands(vsg::StateGroup& stateGroup) const
+{
+    for (auto& sc : stateGroup.stateCommands)
+    {
+        if (!(sc.cast<vsg::BindDescriptorSet>() || sc.cast<vsg::BindDescriptorSets>())) continue;
+
+        vsg::CopyOp copyop;
+        copyop.duplicate = vsg::ref_ptr<vsg::Duplicate>(new vsg::Duplicate);
+        auto cloned = sc->clone(copyop).cast<vsg::StateCommand>();
+        if (cloned) sc = cloned;
+    }
 }
 
 bool GlobeTileLayer::assignTileImage(vsg::StateGroup& stateGroup, vsg::ref_ptr<vsg::Data> image) const
