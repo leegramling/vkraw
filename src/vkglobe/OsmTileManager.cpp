@@ -101,8 +101,21 @@ void OsmTileManager::update(const vsg::dvec3& eyeWorld, const vsg::dmat4& globeR
     currentLatDeg_ = latDeg;
     currentLonDeg_ = lonDeg;
     currentAltitudeFt_ = altitudeFt;
-    // Debug mode: keep OSM active whenever enabled so tiles remain visible while tuning.
-    active_ = true;
+    if (active_)
+    {
+        if (altitudeFt >= cfg_.disableAltitudeFt) active_ = false;
+    }
+    else
+    {
+        if (altitudeFt <= cfg_.enableAltitudeFt) active_ = true;
+    }
+
+    if (!active_)
+    {
+        currentZoom_ = 0;
+        visibleTiles_.clear();
+        return;
+    }
 
     const int zoom = chooseZoomForAltitude(altitudeFt);
     currentZoom_ = zoom;
