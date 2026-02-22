@@ -553,7 +553,8 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             std::cerr << "Failed to create globe scene node." << std::endl;
             return 1;
         }
-        globeTransform->addChild(globeNode);
+        const bool hideBaseGlobeForOsmDebug = osmEnabled;
+        if (!hideBaseGlobeForOsmDebug) globeTransform->addChild(globeNode);
         auto osmTileLayer = GlobeTileLayer::create(kWgs84EquatorialRadiusFeet * 1.0020, kWgs84PolarRadiusFeet * 1.0020);
         globeTransform->addChild(osmTileLayer->root());
 
@@ -630,7 +631,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         profilerSettings->gpu_instrumentation_level = 1;
         auto profiler = vsg::Profiler::create(profilerSettings);
         viewer->assignInstrumentation(profiler);
-        bool baseGlobeVisible = true;
+        bool baseGlobeVisible = !hideBaseGlobeForOsmDebug;
 
         viewer->addEventHandler(vsgImGui::SendEventsToImGui::create());
         viewer->addEventHandler(vsg::CloseHandler::create(viewer));
@@ -674,7 +675,15 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                     std::cerr << "Failed to rebuild globe node." << std::endl;
                     return 1;
                 }
-                globeTransform->addChild(rebuilt);
+                if (!hideBaseGlobeForOsmDebug)
+                {
+                    globeTransform->addChild(rebuilt);
+                    baseGlobeVisible = true;
+                }
+                else
+                {
+                    baseGlobeVisible = false;
+                }
                 globeTransform->addChild(osmTileLayer->root());
             }
 
@@ -704,17 +713,20 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                 }
                 osmCurrentlyActive = osmTiles->active();
             }
-            // Hide base globe while OSM is active to make streamed tiles unambiguous.
-            if (osmCurrentlyActive && baseGlobeVisible)
+            // In OSM debug mode, keep base globe hidden; otherwise hide/show by OSM active state.
+            if (!hideBaseGlobeForOsmDebug)
             {
-                auto it = std::find(globeTransform->children.begin(), globeTransform->children.end(), globeNode);
-                if (it != globeTransform->children.end()) globeTransform->children.erase(it);
-                baseGlobeVisible = false;
-            }
-            else if (!osmCurrentlyActive && !baseGlobeVisible)
-            {
-                globeTransform->children.insert(globeTransform->children.begin(), globeNode);
-                baseGlobeVisible = true;
+                if (osmCurrentlyActive && baseGlobeVisible)
+                {
+                    auto it = std::find(globeTransform->children.begin(), globeTransform->children.end(), globeNode);
+                    if (it != globeTransform->children.end()) globeTransform->children.erase(it);
+                    baseGlobeVisible = false;
+                }
+                else if (!osmCurrentlyActive && !baseGlobeVisible)
+                {
+                    globeTransform->children.insert(globeTransform->children.begin(), globeNode);
+                    baseGlobeVisible = true;
+                }
             }
             appState->osmEnabled = osmTiles->enabled();
             appState->osmActive = osmTiles->active();
