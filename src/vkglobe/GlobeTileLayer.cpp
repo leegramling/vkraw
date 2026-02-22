@@ -25,9 +25,11 @@ double tileYToLatDeg(int y, int z)
 
 } // namespace
 
-GlobeTileLayer::GlobeTileLayer(double equatorialRadiusFt, double polarRadiusFt) :
+GlobeTileLayer::GlobeTileLayer(double equatorialRadiusFt, double polarRadiusFt, vsg::ref_ptr<vsg::StateGroup> stateTemplate, vsg::ref_ptr<vsg::Data> fallbackImage) :
     equatorialRadiusFt_(equatorialRadiusFt),
     polarRadiusFt_(polarRadiusFt),
+    stateTemplate_(std::move(stateTemplate)),
+    fallbackImage_(std::move(fallbackImage)),
     root_(vsg::Group::create())
 {
 }
@@ -39,7 +41,8 @@ bool GlobeTileLayer::syncFromTileWindow(const std::vector<TileSample>& tileWindo
     {
         auto& slot = slots_[{sample.ox, sample.oy}];
         const bool keyChanged = !slot.hasKey || slot.key.z != sample.key.z || slot.key.x != sample.key.x || slot.key.y != sample.key.y;
-        if (!keyChanged) continue;
+        const bool loadChanged = (slot.loaded != sample.loaded);
+        if (!keyChanged && !loadChanged) continue;
 
         if (slot.node)
         {
@@ -47,7 +50,8 @@ bool GlobeTileLayer::syncFromTileWindow(const std::vector<TileSample>& tileWindo
             if (it != root_->children.end()) root_->children.erase(it);
         }
 
-        slot.node = buildTileNode(sample.key);
+        auto image = (sample.loaded && sample.image) ? sample.image : fallbackImage_;
+        slot.node = buildTileNode(sample.key, image);
         if (slot.node) root_->addChild(slot.node);
         slot.key = sample.key;
         slot.hasKey = true;
@@ -57,8 +61,11 @@ bool GlobeTileLayer::syncFromTileWindow(const std::vector<TileSample>& tileWindo
     return changed;
 }
 
-vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key) const
+vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key, vsg::ref_ptr<vsg::Data> image) const
 {
+    if (!stateTemplate_) return {};
+    if (!image) image = fallbackImage_;
+
     constexpr uint32_t cols = 24;
     constexpr uint32_t rows = 24;
     const uint32_t numVertices = cols * rows;
@@ -70,6 +77,7 @@ vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key) const
     const double lonRight = tileXToLonDeg(key.x + 1, key.z);
     const double latTop = tileYToLatDeg(key.y, key.z);
     const double latBottom = tileYToLatDeg(key.y + 1, key.z);
+    const bool topLeftOrigin = image && image->properties.origin == vsg::TOP_LEFT;
 
     for (uint32_t r = 0; r < rows; ++r)
     {
@@ -99,7 +107,7 @@ vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key) const
                 z / (polarRadiusFt_ * polarRadiusFt_));
             n = vsg::normalize(n);
             (*normals)[idx] = vsg::vec3(static_cast<float>(n.x), static_cast<float>(n.y), static_cast<float>(n.z));
-            (*texcoords)[idx] = vsg::vec2(static_cast<float>(u), static_cast<float>(v));
+            (*texcoords)[idx] = vsg::vec2(static_cast<float>(u), static_cast<float>(topLeftOrigin ? v : (1.0 - v)));
         }
     }
 
@@ -152,8 +160,34 @@ vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key) const
     vid->assignIndices(indices);
     vid->indexCount = static_cast<uint32_t>(indices->size());
     vid->instanceCount = 1;
+    vsg::CopyOp copyop;
+    copyop.duplicate = vsg::ref_ptr<vsg::Duplicate>(new vsg::Duplicate);
+    auto tileState = stateTemplate_->clone(copyop).cast<vsg::StateGroup>();
+    if (!tileState) return {};
+    if (!assignTileImage(*tileState, image)) return {};
+    tileState->children.clear();
+    tileState->addChild(vid);
+    return tileState;
+}
 
-    return vid;
+bool GlobeTileLayer::assignTileImage(vsg::StateGroup& stateGroup, vsg::ref_ptr<vsg::Data> image) const
+{
+    if (!image) return false;
+    for (auto& sc : stateGroup.stateCommands)
+    {
+        auto bds = sc.cast<vsg::BindDescriptorSet>();
+        if (!bds || !bds->descriptorSet) continue;
+        for (auto& descriptor : bds->descriptorSet->descriptors)
+        {
+            auto di = descriptor.cast<vsg::DescriptorImage>();
+            if (!di || di->imageInfoList.empty() || !di->imageInfoList.front()) continue;
+            auto imageInfo = di->imageInfoList.front();
+            imageInfo->imageView = vsg::ImageView::create(vsg::Image::create(image));
+            imageInfo->imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace vkglobe

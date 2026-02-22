@@ -389,6 +389,26 @@ vsg::ref_ptr<vsg::Data> createProceduralEarthTexture()
     return tex;
 }
 
+vsg::ref_ptr<vsg::Data> createOsmTileFallbackTexture()
+{
+    constexpr uint32_t w = 64;
+    constexpr uint32_t h = 64;
+    auto tex = vsg::ubvec4Array2D::create(w, h, vsg::Data::Properties{VK_FORMAT_R8G8B8A8_UNORM});
+    for (uint32_t y = 0; y < h; ++y)
+    {
+        for (uint32_t x = 0; x < w; ++x)
+        {
+            const bool edge = (x < 2) || (y < 2) || (x >= w - 2) || (y >= h - 2);
+            const bool checker = (((x / 8) + (y / 8)) % 2) == 0;
+            const vsg::ubvec4 c = edge ? vsg::ubvec4(255, 40, 40, 255)
+                                       : (checker ? vsg::ubvec4(240, 230, 80, 255) : vsg::ubvec4(20, 20, 20, 255));
+            tex->set(x, y, c);
+        }
+    }
+    tex->dirty();
+    return tex;
+}
+
 struct SavedSettings
 {
     std::string earthTexturePath;
@@ -785,10 +805,17 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             return 1;
         }
         auto globeMeshNode = globeStateGroup->children.front();
+        auto tileStateTemplate = vsg::clone(globeStateGroup).cast<vsg::StateGroup>();
+        if (!tileStateTemplate)
+        {
+            std::cerr << "Failed to clone globe state template for OSM tiles." << std::endl;
+            return 1;
+        }
         const bool hideBaseGlobeForOsmDebug = false;
         globeTransform->addChild(globeNode);
         // Keep shell offset small so tiles don't get clipped at low altitude startup.
-        auto osmTileLayer = GlobeTileLayer::create(kWgs84EquatorialRadiusFeet * 1.00001, kWgs84PolarRadiusFeet * 1.00001);
+        auto osmTileLayer = GlobeTileLayer::create(kWgs84EquatorialRadiusFeet * 1.00001, kWgs84PolarRadiusFeet * 1.00001,
+                                                   tileStateTemplate, createOsmTileFallbackTexture());
         globeStateGroup->addChild(osmTileLayer->root());
         if (hideBaseGlobeForOsmDebug)
         {
