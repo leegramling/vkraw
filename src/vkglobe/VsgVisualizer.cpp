@@ -29,21 +29,14 @@ constexpr double kWgs84PolarRadiusFeet = kWgs84PolarRadiusMeters * kMetersToFeet
 constexpr double kStartLatDeg = 37.775115;   // vsgLayt origin lat
 constexpr double kStartLonDeg = -122.419241; // vsgLayt origin lon
 
-vsg::dmat4 rotationToBringLatLonToFront(double latDeg, double lonDeg)
+vsg::dvec3 worldFromLatLon(double latDeg, double lonDeg)
 {
     const double latRad = vsg::radians(latDeg);
     const double lonRad = vsg::radians(lonDeg);
-    const vsg::dvec3 target = vsg::normalize(vsg::dvec3(
+    return vsg::dvec3(
         std::sin(lonRad) * std::cos(latRad),
         -std::cos(lonRad) * std::cos(latRad),
-        std::sin(latRad)));
-    const vsg::dvec3 front(0.0, -1.0, 0.0);
-    const double dotv = std::clamp(vsg::dot(target, front), -1.0, 1.0);
-    const double angle = std::acos(dotv);
-    const vsg::dvec3 axis = vsg::cross(target, front);
-    const double axisLen = vsg::length(axis);
-    if (axisLen < 1e-10 || angle < 1e-10) return vsg::dmat4(1.0);
-    return vsg::rotate(angle, axis / axisLen);
+        std::sin(latRad));
 }
 
 struct AppState : public vsg::Inherit<vsg::Object, AppState>
@@ -545,7 +538,6 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
 
         auto scene = vsg::Group::create();
         auto globeTransform = vsg::MatrixTransform::create();
-        globeTransform->matrix = rotationToBringLatLonToFront(kStartLatDeg, kStartLonDeg);
         scene->addChild(globeTransform);
 
         auto ellipsoidModel = vsg::EllipsoidModel::create(kWgs84EquatorialRadiusFeet, kWgs84PolarRadiusFeet);
@@ -567,12 +559,15 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
 
         const double radius = kWgs84EquatorialRadiusFeet;
         const double aspect = static_cast<double>(window->extent2D().width) / static_cast<double>(window->extent2D().height);
-        const double startAltitudeFt = 8000.0;
+        const double startAltitudeFt = 5000.0;
+        const vsg::dvec3 startDir = vsg::normalize(worldFromLatLon(kStartLatDeg, kStartLonDeg));
+        const vsg::dvec3 startEye = startDir * (radius + startAltitudeFt);
+        const vsg::dvec3 startUp = vsg::normalize(vsg::cross(vsg::cross(startDir, vsg::dvec3(0.0, 0.0, 1.0)), startDir));
 
         auto lookAt = vsg::LookAt::create(
-            vsg::dvec3(0.0, -(radius + startAltitudeFt), 0.0),
+            startEye,
             vsg::dvec3(0.0, 0.0, 0.0),
-            vsg::dvec3(0.0, 0.0, 1.0));
+            startUp);
 
         auto perspective = vsg::EllipsoidPerspective::create(lookAt, ellipsoidModel, 35.0, aspect, 0.0005, 0.0);
         auto camera = vsg::Camera::create(perspective, lookAt, vsg::ViewportState::create(window->extent2D()));
