@@ -199,20 +199,32 @@ bool GlobeTileLayer::assignTileImage(vsg::StateGroup& stateGroup, vsg::ref_ptr<v
     static bool loggedFailure = false;
     auto tryDescriptorSet = [&](vsg::DescriptorSet& descriptorSet) -> bool
     {
+        bool updatedAny = false;
         for (auto& descriptor : descriptorSet.descriptors)
         {
             auto di = descriptor.cast<vsg::DescriptorImage>();
-            if (!di || di->imageInfoList.empty() || !di->imageInfoList.front()) continue;
-            auto imageInfo = di->imageInfoList.front();
-            imageInfo->imageView = vsg::ImageView::create(vsg::Image::create(image));
-            imageInfo->imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            if (!di || di->descriptorType != VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) continue;
+            if (di->imageInfoList.empty()) continue;
+
+            auto oldInfo = di->imageInfoList.front();
+            auto sampler = oldInfo ? oldInfo->sampler : vsg::Sampler::create();
+            auto newInfo = vsg::ImageInfo::create(sampler, image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            di->imageInfoList.clear();
+            di->imageInfoList.push_back(newInfo);
+            updatedAny = true;
+
             if (!loggedSuccess)
             {
                 loggedSuccess = true;
-                std::cout << "[OSM] tile texture descriptor assigned (origin="
+                std::cout << "[OSM] tile texture descriptor assigned (binding=" << di->dstBinding
+                          << ", origin="
                           << (image->properties.origin == vsg::TOP_LEFT ? "top-left" : "bottom-left")
                           << ", size=" << image->width() << "x" << image->height() << ")\n";
             }
+        }
+        if (updatedAny)
+        {
+            descriptorSet.release();
             return true;
         }
         return false;
