@@ -54,8 +54,7 @@ struct AppState : public vsg::Inherit<vsg::Object, AppState>
     bool settingsSaveRequested = false;
     bool osmEnabledSetting = false;
     int osmMaxZoomSetting = 19;
-    float osmEnableAltFtSetting = 10000.0f;
-    float osmDisableAltFtSetting = 15000.0f;
+    float osmAltThresholdFtSetting = 10000.0f;
     std::string osmCachePathSetting;
     std::string earthTexturePathSetting;
     std::string configPathSetting = "vkglobe.json";
@@ -290,10 +289,9 @@ public:
             bool changed = false;
             changed |= ImGui::Checkbox("Enable OSM Tiles", &state->osmEnabledSetting);
             changed |= ImGui::SliderInt("OSM Max Zoom", &state->osmMaxZoomSetting, 1, 22);
-            changed |= ImGui::InputFloat("OSM Enable Alt (ft)", &state->osmEnableAltFtSetting, 1000.0f, 10000.0f, "%.0f");
-            changed |= ImGui::InputFloat("OSM Disable Alt (ft)", &state->osmDisableAltFtSetting, 1000.0f, 10000.0f, "%.0f");
-            state->osmEnableAltFtSetting = std::max(0.0f, state->osmEnableAltFtSetting);
-            state->osmDisableAltFtSetting = std::max(state->osmEnableAltFtSetting + 1.0f, state->osmDisableAltFtSetting);
+            changed |= ImGui::InputFloat("OSM Alt Threshold (ft)", &state->osmAltThresholdFtSetting, 1000.0f, 10000.0f, "%.0f");
+            state->osmAltThresholdFtSetting = std::max(0.0f, state->osmAltThresholdFtSetting);
+            ImGui::TextUnformatted("Tiles ON at or below threshold, OFF above threshold.");
             ImGui::Separator();
             ImGui::Text("OSM Cache: %s", state->osmCachePathSetting.c_str());
             ImGui::Text("Earth Texture: %s", state->earthTexturePathSetting.empty() ? "(procedural fallback)" : state->earthTexturePathSetting.c_str());
@@ -727,8 +725,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         auto appState = AppState::create();
         appState->osmEnabled = osmEnabled;
         appState->osmEnabledSetting = osmEnabled;
-        appState->osmEnableAltFtSetting = static_cast<float>(osmEnableAltFt);
-        appState->osmDisableAltFtSetting = static_cast<float>(osmDisableAltFt);
+        appState->osmAltThresholdFtSetting = static_cast<float>(osmEnableAltFt);
         appState->osmCachePathSetting = osmCachePath;
         appState->earthTexturePathSetting = earthTexturePath;
         appState->configPathSetting = configPath;
@@ -915,7 +912,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                 appState->settingsApplyRequested = false;
                 osmTiles->setEnabled(appState->osmEnabledSetting);
                 osmTiles->setMaxZoom(appState->osmMaxZoomSetting);
-                osmTiles->setActivationAltitudes(appState->osmEnableAltFtSetting, appState->osmDisableAltFtSetting);
+                osmTiles->setActivationAltitudes(appState->osmAltThresholdFtSetting, appState->osmAltThresholdFtSetting + 1.0f);
                 appState->settingsSaveRequested = true;
             }
 
@@ -926,8 +923,8 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                 toSave.earthTexturePath = appState->earthTexturePathSetting;
                 toSave.osmEnabled = appState->osmEnabledSetting;
                 toSave.osmCachePath = appState->osmCachePathSetting;
-                toSave.osmEnableAltFt = appState->osmEnableAltFtSetting;
-                toSave.osmDisableAltFt = appState->osmDisableAltFtSetting;
+                toSave.osmEnableAltFt = appState->osmAltThresholdFtSetting;
+                toSave.osmDisableAltFt = appState->osmAltThresholdFtSetting + 1.0;
                 toSave.osmMaxZoom = appState->osmMaxZoomSetting;
                 if (!saveSavedSettings(appState->configPathSetting, toSave))
                 {
@@ -1001,8 +998,8 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         toSave.earthTexturePath = appState->earthTexturePathSetting;
         toSave.osmEnabled = appState->osmEnabledSetting;
         toSave.osmCachePath = appState->osmCachePathSetting;
-        toSave.osmEnableAltFt = appState->osmEnableAltFtSetting;
-        toSave.osmDisableAltFt = appState->osmDisableAltFtSetting;
+        toSave.osmEnableAltFt = appState->osmAltThresholdFtSetting;
+        toSave.osmDisableAltFt = appState->osmAltThresholdFtSetting + 1.0;
         toSave.osmMaxZoom = appState->osmMaxZoomSetting;
         (void)saveSavedSettings(appState->configPathSetting, toSave);
 
