@@ -39,6 +39,9 @@ GlobeTileLayer::GlobeTileLayer(double equatorialRadiusFt, double polarRadiusFt, 
 bool GlobeTileLayer::syncFromTileWindow(const std::vector<TileSample>& tileWindow)
 {
     bool changed = false;
+    int rebuiltLoaded = 0;
+    int rebuiltFallback = 0;
+    int removedSlots = 0;
     std::set<std::pair<int, int>> seenOffsets;
     for (const TileSample& sample : tileWindow)
     {
@@ -60,6 +63,8 @@ bool GlobeTileLayer::syncFromTileWindow(const std::vector<TileSample>& tileWindo
         slot.key = sample.key;
         slot.hasKey = true;
         slot.loaded = sample.loaded;
+        if (sample.loaded) ++rebuiltLoaded;
+        else ++rebuiltFallback;
         changed = true;
     }
 
@@ -78,7 +83,20 @@ bool GlobeTileLayer::syncFromTileWindow(const std::vector<TileSample>& tileWindo
             if (childIt != root_->children.end()) root_->children.erase(childIt);
         }
         it = slots_.erase(it);
+        ++removedSlots;
         changed = true;
+    }
+    static int loggedSyncs = 0;
+    if (changed && loggedSyncs < 20)
+    {
+        ++loggedSyncs;
+        std::cout << "[OSM] tile sync window=" << tileWindow.size()
+                  << " rebuilt_loaded=" << rebuiltLoaded
+                  << " rebuilt_fallback=" << rebuiltFallback
+                  << " removed=" << removedSlots
+                  << " active_slots=" << slots_.size()
+                  << " root_children=" << root_->children.size()
+                  << "\n";
     }
     return changed;
 }
@@ -197,15 +215,20 @@ bool GlobeTileLayer::assignTileImage(vsg::StateGroup& stateGroup, vsg::ref_ptr<v
     if (!image) return false;
     static bool loggedSuccess = false;
     static bool loggedFailure = false;
+    static int loggedDescriptorScans = 0;
     uint32_t replacedDescriptorImages = 0;
+    uint32_t scannedDescriptorImages = 0;
+    uint32_t scannedDescriptorSets = 0;
     auto tryDescriptorSet = [&](vsg::DescriptorSet& descriptorSet) -> bool
     {
+        ++scannedDescriptorSets;
         bool updatedAny = false;
         for (auto& descriptor : descriptorSet.descriptors)
         {
             auto di = descriptor.cast<vsg::DescriptorImage>();
             if (!di || di->descriptorType != VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) continue;
             if (di->imageInfoList.empty()) continue;
+            ++scannedDescriptorImages;
 
             vsg::ImageInfoList newInfos;
             newInfos.reserve(di->imageInfoList.size());
@@ -251,6 +274,13 @@ bool GlobeTileLayer::assignTileImage(vsg::StateGroup& stateGroup, vsg::ref_ptr<v
     }
     if (replacedDescriptorImages > 0)
     {
+        if (loggedDescriptorScans < 20)
+        {
+            ++loggedDescriptorScans;
+            std::cout << "[OSM] tile state patch descriptor_sets=" << scannedDescriptorSets
+                      << " descriptor_images=" << scannedDescriptorImages
+                      << " replaced=" << replacedDescriptorImages << "\n";
+        }
         if (!loggedSuccess)
         {
             loggedSuccess = true;
