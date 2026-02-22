@@ -235,13 +235,38 @@ public:
         auto lookAt = camera->viewMatrix.cast<vsg::LookAt>();
         if (!lookAt) return;
 
-        const double zoomScale = (e.delta.y > 0.0f) ? 0.9 : 1.1;
         vsg::dvec3 eyeDir = lookAt->eye - lookAt->center;
         double distance = vsg::length(eyeDir);
         if (distance < 1.0) return;
 
+        // Compute ground-relative altitude at the current view and use it for both
+        // a local min-distance clamp and a smoother zoom step near the surface.
+        vsg::dvec3 hitWorld;
+        double groundRadius = equatorialRadius;
+        double altitudeFt = distance - equatorialRadius;
+        if (globeTransform &&
+            intersectEllipsoid(lookAt->eye, vsg::normalize(lookAt->center - lookAt->eye),
+                               globeTransform->matrix, equatorialRadius, polarRadius, hitWorld))
+        {
+            groundRadius = vsg::length(hitWorld);
+            altitudeFt = vsg::length(lookAt->eye - hitWorld);
+        }
+
+        auto smoothstep = [](double edge0, double edge1, double x) {
+            if (edge1 <= edge0) return (x >= edge1) ? 1.0 : 0.0;
+            double t = (x - edge0) / (edge1 - edge0);
+            t = std::clamp(t, 0.0, 1.0);
+            return t * t * (3.0 - 2.0 * t);
+        };
+
+        const double altitudeT = smoothstep(100.0, 250000.0, altitudeFt);
+        const double zoomStepPerNotch = 0.02 + (0.16 * altitudeT);
+        const double wheelDelta = std::clamp(static_cast<double>(e.delta.y), -20.0, 20.0);
+        const double zoomScale = std::exp(-wheelDelta * zoomStepPerNotch);
+
         distance *= zoomScale;
-        const double minDistance = equatorialRadius + 100.0;
+        const double minAltitudeFt = 100.0;
+        const double minDistance = groundRadius + minAltitudeFt;
         const double maxDistance = equatorialRadius * 50.0;
         distance = std::clamp(distance, minDistance, maxDistance);
 
