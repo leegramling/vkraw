@@ -130,9 +130,23 @@ vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key) const
     const float tintR = 0.45f + 0.5f * static_cast<float>((key.x * 17) & 7) / 7.0f;
     const float tintG = 0.45f + 0.5f * static_cast<float>((key.y * 11) & 7) / 7.0f;
     const float tintB = 0.45f + 0.5f * static_cast<float>((key.z * 3) & 7) / 7.0f;
-    for (uint32_t i = 0; i < numVertices; ++i)
+    for (uint32_t r = 0; r < rows; ++r)
     {
-        (*colors)[i] = vsg::vec4(tintR, tintG, tintB, 1.0f);
+        for (uint32_t c = 0; c < cols; ++c)
+        {
+            const uint32_t i = r * cols + c;
+            const bool edge = (r == 0) || (c == 0) || (r == rows - 1) || (c == cols - 1);
+            if (edge)
+            {
+                // Strong border so the tile patch window remains obvious while OSM textures
+                // are not yet bound per-tile.
+                (*colors)[i] = vsg::vec4(1.0f, 0.15f, 0.15f, 1.0f);
+            }
+            else
+            {
+                (*colors)[i] = vsg::vec4(tintR, tintG, tintB, 1.0f);
+            }
+        }
     }
     vid->assignArrays(vsg::DataList{vertices, normals, texcoords, colors});
     vid->assignIndices(indices);
