@@ -39,8 +39,7 @@ bool GlobeTileLayer::syncFromTileWindow(const std::vector<TileSample>& tileWindo
     {
         auto& slot = slots_[{sample.ox, sample.oy}];
         const bool keyChanged = !slot.hasKey || slot.key.z != sample.key.z || slot.key.x != sample.key.x || slot.key.y != sample.key.y;
-        const bool loadChanged = (slot.loaded != sample.loaded);
-        if (!keyChanged && !loadChanged) continue;
+        if (!keyChanged) continue;
 
         if (slot.node)
         {
