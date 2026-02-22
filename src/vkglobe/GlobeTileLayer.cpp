@@ -32,34 +32,47 @@ GlobeTileLayer::GlobeTileLayer(double equatorialRadiusFt, double polarRadiusFt) 
 {
 }
 
-bool GlobeTileLayer::syncFromTiles(const std::vector<std::pair<TileKey, vsg::ref_ptr<vsg::Data>>>& loadedTiles)
+vsg::ref_ptr<vsg::Data> GlobeTileLayer::placeholderImage() const
+{
+    if (placeholderImage_) return placeholderImage_;
+    constexpr uint32_t w = 32;
+    constexpr uint32_t h = 32;
+    auto tex = vsg::ubvec4Array2D::create(w, h, vsg::Data::Properties{VK_FORMAT_R8G8B8A8_UNORM});
+    for (uint32_t y = 0; y < h; ++y)
+    {
+        for (uint32_t x = 0; x < w; ++x)
+        {
+            const bool a = ((x / 4) + (y / 4)) % 2 == 0;
+            tex->set(x, y, a ? vsg::ubvec4(255, 255, 0, 255) : vsg::ubvec4(0, 0, 0, 255));
+        }
+    }
+    tex->dirty();
+    placeholderImage_ = tex;
+    return placeholderImage_;
+}
+
+bool GlobeTileLayer::syncFromTileWindow(const std::vector<TileSample>& tileWindow)
 {
     bool changed = false;
-    std::set<TileKey> seen;
-    for (const auto& [key, image] : loadedTiles)
+    for (const TileSample& sample : tileWindow)
     {
-        seen.insert(key);
-        if (activeNodes_.find(key) != activeNodes_.end()) continue;
-        auto node = buildTileNode(key, image);
-        if (!node) continue;
-        root_->addChild(node);
-        activeNodes_[key] = node;
-        changed = true;
-    }
+        auto& slot = slots_[{sample.ox, sample.oy}];
+        const bool keyChanged = !slot.hasKey || slot.key.z != sample.key.z || slot.key.x != sample.key.x || slot.key.y != sample.key.y;
+        const bool loadChanged = (slot.loaded != sample.loaded);
+        if (!keyChanged && !loadChanged) continue;
 
-    std::vector<TileKey> toRemove;
-    toRemove.reserve(activeNodes_.size());
-    for (const auto& [key, _] : activeNodes_)
-    {
-        if (seen.find(key) == seen.end()) toRemove.push_back(key);
-    }
-    for (const TileKey& key : toRemove)
-    {
-        auto it = activeNodes_.find(key);
-        if (it == activeNodes_.end()) continue;
-        auto childIt = std::find(root_->children.begin(), root_->children.end(), it->second);
-        if (childIt != root_->children.end()) root_->children.erase(childIt);
-        activeNodes_.erase(it);
+        if (slot.node)
+        {
+            auto it = std::find(root_->children.begin(), root_->children.end(), slot.node);
+            if (it != root_->children.end()) root_->children.erase(it);
+        }
+
+        const auto image = sample.loaded && sample.image ? sample.image : placeholderImage();
+        slot.node = buildTileNode(sample.key, image);
+        if (slot.node) root_->addChild(slot.node);
+        slot.key = sample.key;
+        slot.hasKey = true;
+        slot.loaded = sample.loaded;
         changed = true;
     }
     return changed;

@@ -7,7 +7,7 @@
 #include <vsg/nodes/Group.h>
 
 #include <map>
-#include <set>
+#include <utility>
 
 namespace vkglobe {
 
@@ -22,16 +22,25 @@ public:
     GlobeTileLayer(double equatorialRadiusFt, double polarRadiusFt);
 
     vsg::ref_ptr<vsg::Group> root() const { return root_; }
-    bool syncFromTiles(const std::vector<std::pair<TileKey, vsg::ref_ptr<vsg::Data>>>& loadedTiles);
+    bool syncFromTileWindow(const std::vector<TileSample>& tileWindow);
 
 private:
+    struct Slot
+    {
+        TileKey key;
+        bool hasKey = false;
+        bool loaded = false;
+        vsg::ref_ptr<vsg::Node> node;
+    };
+
     vsg::ref_ptr<vsg::Node> buildTileNode(const TileKey& key, vsg::ref_ptr<vsg::Data> image) const;
+    vsg::ref_ptr<vsg::Data> placeholderImage() const;
 
     double equatorialRadiusFt_ = 0.0;
     double polarRadiusFt_ = 0.0;
     vsg::ref_ptr<vsg::Group> root_;
-    std::map<TileKey, vsg::ref_ptr<vsg::Node>> activeNodes_;
+    mutable vsg::ref_ptr<vsg::Data> placeholderImage_;
+    std::map<std::pair<int, int>, Slot> slots_;
 };
 
 } // namespace vkglobe
-

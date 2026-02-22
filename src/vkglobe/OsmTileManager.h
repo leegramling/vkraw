@@ -28,6 +28,15 @@ struct TileEntry
     vsg::ref_ptr<vsg::Data> image;
 };
 
+struct TileSample
+{
+    TileKey key;
+    int ox = 0;
+    int oy = 0;
+    bool loaded = false;
+    vsg::ref_ptr<vsg::Data> image;
+};
+
 class OsmTileManager : public vsg::Inherit<vsg::Object, OsmTileManager>
 {
 public:
@@ -35,6 +44,7 @@ public:
     {
         std::filesystem::path cacheRoot = "cache/osm";
         int maxFetchPerFrame = 4;
+        int tileRadius = 4;
         int minZoom = 1;
         int maxZoom = 19;
         double enableAltitudeFt = 10000.0;
@@ -62,6 +72,7 @@ public:
     size_t cachedTileCount() const { return tileCache_.size(); }
     size_t visibleTileCount() const { return visibleTiles_.size(); }
     std::vector<std::pair<TileKey, vsg::ref_ptr<vsg::Data>>> loadedVisibleTiles() const;
+    std::vector<TileSample> currentTileWindow() const;
 
     void update(const vsg::dvec3& eyeWorld, const vsg::dmat4& globeRotation, double equatorialRadiusFt, double polarRadiusFt);
 
@@ -77,6 +88,9 @@ private:
     bool enabled_ = false;
     bool active_ = false;
     int currentZoom_ = 0;
+    int currentCenterTileX_ = 0;
+    int currentCenterTileY_ = 0;
+    int currentTileRadius_ = 0;
     double currentLatDeg_ = 0.0;
     double currentLonDeg_ = 0.0;
     double currentAltitudeFt_ = 0.0;

@@ -695,8 +695,8 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             if (osmTiles->enabled())
             {
                 osmTiles->update(lookAt->eye, globeTransform->matrix, kWgs84EquatorialRadiusFeet, kWgs84PolarRadiusFeet);
-                const auto loadedVisibleTiles = osmTiles->loadedVisibleTiles();
-                const bool tilesChanged = osmTileLayer->syncFromTiles(loadedVisibleTiles);
+                const auto tileWindow = osmTiles->currentTileWindow();
+                const bool tilesChanged = osmTileLayer->syncFromTileWindow(tileWindow);
                 if (tilesChanged)
                 {
                     viewer->compile();
@@ -709,7 +709,8 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                               << " lon=" << osmTiles->currentLonDeg()
                               << " alt_ft=" << osmTiles->currentAltitudeFt()
                               << " visible_tiles=" << osmTiles->visibleTileCount()
-                              << " loaded_visible_tiles=" << loadedVisibleTiles.size()
+                              << " window_tiles=" << tileWindow.size()
+                              << " loaded_visible_tiles=" << osmTiles->loadedVisibleTiles().size()
                               << " cached_tiles=" << osmTiles->cachedTileCount()
                               << std::endl;
                 }

@@ -143,8 +143,10 @@ void OsmTileManager::requestVisibleTiles(double latDeg, double lonDeg, int zoom)
     const int tiles = tileCountForZoom(zoom);
     const int centerX = static_cast<int>(std::floor(lonToTileX(lonDeg, zoom)));
     const int centerY = static_cast<int>(std::floor(latToTileY(latDeg, zoom)));
-
-    const int radius = std::clamp(2 + ((cfg_.maxZoom - zoom) / 3), 2, 6);
+    const int radius = std::max(1, cfg_.tileRadius);
+    currentCenterTileX_ = centerX;
+    currentCenterTileY_ = centerY;
+    currentTileRadius_ = radius;
     visibleTiles_.clear();
     for (int oy = -radius; oy <= radius; ++oy)
     {
@@ -205,6 +207,37 @@ std::vector<std::pair<TileKey, vsg::ref_ptr<vsg::Data>>> OsmTileManager::loadedV
         tiles.emplace_back(key, it->second.image);
     }
     return tiles;
+}
+
+std::vector<TileSample> OsmTileManager::currentTileWindow() const
+{
+    std::vector<TileSample> window;
+    if (currentZoom_ <= 0) return window;
+
+    const int tiles = tileCountForZoom(currentZoom_);
+    const int radius = std::max(1, currentTileRadius_);
+    window.reserve(static_cast<size_t>((2 * radius + 1) * (2 * radius + 1)));
+    for (int oy = -radius; oy <= radius; ++oy)
+    {
+        for (int ox = -radius; ox <= radius; ++ox)
+        {
+            const int tx = wrapTileX(currentCenterTileX_ + ox, tiles);
+            const int ty = std::clamp(currentCenterTileY_ + oy, 0, tiles - 1);
+            const TileKey key{currentZoom_, tx, ty};
+            TileSample sample{};
+            sample.key = key;
+            sample.ox = ox;
+            sample.oy = oy;
+            auto it = tileCache_.find(key);
+            if (it != tileCache_.end() && it->second.loaded && it->second.image)
+            {
+                sample.loaded = true;
+                sample.image = it->second.image;
+            }
+            window.push_back(sample);
+        }
+    }
+    return window;
 }
 
 } // namespace vkglobe
