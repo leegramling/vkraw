@@ -197,6 +197,7 @@ bool GlobeTileLayer::assignTileImage(vsg::StateGroup& stateGroup, vsg::ref_ptr<v
     if (!image) return false;
     static bool loggedSuccess = false;
     static bool loggedFailure = false;
+    uint32_t replacedDescriptorImages = 0;
     auto tryDescriptorSet = [&](vsg::DescriptorSet& descriptorSet) -> bool
     {
         bool updatedAny = false;
@@ -206,12 +207,16 @@ bool GlobeTileLayer::assignTileImage(vsg::StateGroup& stateGroup, vsg::ref_ptr<v
             if (!di || di->descriptorType != VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) continue;
             if (di->imageInfoList.empty()) continue;
 
-            auto oldInfo = di->imageInfoList.front();
-            auto sampler = oldInfo ? oldInfo->sampler : vsg::Sampler::create();
-            auto newInfo = vsg::ImageInfo::create(sampler, image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            di->imageInfoList.clear();
-            di->imageInfoList.push_back(newInfo);
+            vsg::ImageInfoList newInfos;
+            newInfos.reserve(di->imageInfoList.size());
+            for (auto& oldInfo : di->imageInfoList)
+            {
+                auto sampler = oldInfo ? oldInfo->sampler : vsg::Sampler::create();
+                newInfos.push_back(vsg::ImageInfo::create(sampler, image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+            }
+            di->imageInfoList = std::move(newInfos);
             updatedAny = true;
+            ++replacedDescriptorImages;
 
             if (!loggedSuccess)
             {
@@ -234,15 +239,24 @@ bool GlobeTileLayer::assignTileImage(vsg::StateGroup& stateGroup, vsg::ref_ptr<v
     {
         if (auto bds = sc.cast<vsg::BindDescriptorSet>(); bds && bds->descriptorSet)
         {
-            if (tryDescriptorSet(*bds->descriptorSet)) return true;
+            (void)tryDescriptorSet(*bds->descriptorSet);
         }
         if (auto bdss = sc.cast<vsg::BindDescriptorSets>(); bdss)
         {
             for (auto& ds : bdss->descriptorSets)
             {
-                if (ds && tryDescriptorSet(*ds)) return true;
+                if (ds) (void)tryDescriptorSet(*ds);
             }
         }
+    }
+    if (replacedDescriptorImages > 0)
+    {
+        if (!loggedSuccess)
+        {
+            loggedSuccess = true;
+            std::cout << "[OSM] tile texture descriptors assigned count=" << replacedDescriptorImages << "\n";
+        }
+        return true;
     }
     if (!loggedFailure)
     {
