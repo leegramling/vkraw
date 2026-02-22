@@ -132,7 +132,29 @@ Suggested limits:
 
 This prevents frame spikes while panning.
 
-## 9. Panning Behavior On Globe
+## 9. Startup Cache Warmup For An "Active" Display
+
+To make `vkglobe` feel alive immediately at startup (instead of waiting for the first few frames of fetch/decode/compile), build a startup warmup pass around the initial camera `lat/lon/alt` before entering the main run loop.
+
+Recommended startup sequence:
+
+1. Create camera and globe state (same as today).
+2. Compute startup sub-camera geodetic location and target zoom.
+3. Build the visible tile window for that startup zoom/center.
+4. Fetch/decode a bounded number of tiles synchronously or in a short warmup loop.
+5. Build `GlobeTileLayer` nodes for those tiles.
+6. Compile the tile layer scenegraph objects before the first frame (`viewer->compile()` or `compileManager->compile(...)` as appropriate).
+7. Enter the run loop only after at least the center ring is ready.
+
+This matches what `vsgLayt` does conceptually (`initial warmup` + incremental fill), but for globe tiles the key addition is compiling the tile textures and patch nodes before the first visible frame. In practice, a good startup target is "center tile + one or two rings" so the first image looks complete and responsive while outer rings continue to stream in.
+
+Implementation note for this repo:
+
+- Reuse the existing `OsmTileManager::update(...)` and `GlobeTileLayer::syncFromTileWindow(...)`.
+- Add a startup warmup loop before `viewer->compile()` that runs `fetchAndDecodeBudgeted()` enough times to populate the startup window.
+- If using runtime tile recompilation, compile the tile layer once before the first frame so descriptor/image uploads are already resident.
+
+## 10. Panning Behavior On Globe
 
 When user drags the globe, continuously update active tile set.
 
@@ -140,7 +162,64 @@ When user drags the globe, continuously update active tile set.
 - As focus tile changes, request neighbor window in movement direction first (priority queue).
 - Keep previously visible ring for a short grace period to hide churn during fast pan.
 
-## 10. Integration Steps In This Repo
+## 11. Can We Replace Globe Mesh Textures Directly Instead Of Tile Patches?
+
+Short answer: partially, but it is not the right long-term approach for close-up OSM imagery.
+
+Two interpretations exist:
+
+1. Replace the single full-globe texture with a newly composited image (global atlas-like update).
+2. Reuse the same globe mesh but swap only local texture regions from cached OSM tiles.
+
+Both are possible in principle, but both become awkward quickly:
+
+- OSM tiles arrive in slippy tile coordinates (Web Mercator), not directly in the equirectangular UV layout used by the globe texture.
+- You must resample/warp each OSM tile into the globe texture space.
+- Updating one big texture every frame causes larger uploads and synchronization pressure than updating only visible patches.
+- Resolution mismatch becomes severe: a single globe texture cannot preserve street-level detail globally.
+
+Where this can still be useful:
+
+- As a background "preview" layer at medium altitude.
+- As a cached composite around the startup location to reduce patch count.
+- As an offline bake for a static mission/region.
+
+For your stated goals (tilt camera, close-up detail, roads/buildings later), per-tile globe patches remain the better design:
+
+- natural LOD
+- bounded uploads
+- simple eviction
+- direct mapping from OSM tile cache to render tile key
+
+## 12. 3D Roads And Buildings At Close Altitude (LOD-Gated)
+
+Once OSM imagery is stable, add vector/3D geometry only at low altitude so the GPU is not overloaded.
+
+Recommended altitude bands:
+
+- High altitude: imagery only (globe + raster tiles)
+- Mid altitude: optional vector overlays (major roads, coastlines, labels)
+- Low altitude: roads/buildings/water meshes for a small radius around the focus point
+
+Key rules:
+
+- Gate 3D generation by altitude threshold (for example below `5,000 ft`, then refine below `1,000 ft`).
+- Build geometry in tile buckets keyed to the same `(z,x,y)` system as imagery for cache alignment.
+- Use LOD by both distance and semantic importance:
+  - roads: highways first, local streets later
+  - buildings: simple extrusions first, detailed meshes only very near camera
+- Keep a strict geometry budget per frame (creation/upload) and per scene (resident triangles).
+
+GPU safety strategy:
+
+- Use frustum culling and tile visibility tests before decoding/building geometry.
+- Use parent-child LOD replacement (coarse region mesh remains until refined children are ready).
+- Merge static geometry within a tile (roads/buildings) to reduce draw calls.
+- Evict far tiles aggressively when altitude rises or focus moves.
+
+This approach keeps the renderer scalable: raster OSM tiles provide continuous coverage, while heavier 3D content appears only where it is useful.
+
+## 13. Integration Steps In This Repo
 
 1. Add new files under `src/vkvsg/`:
 - `OsmProjection.h/.cpp`
@@ -164,7 +243,7 @@ When user drags the globe, continuously update active tile set.
 
 3. Keep existing single-texture globe path as fallback when OSM disabled or unavailable.
 
-## 11. Provider, Policy, And Practical Notes
+## 14. Provider, Policy, And Practical Notes
 
 OpenStreetMap standard tile servers are not for heavy production traffic. For sustained usage:
 
@@ -172,7 +251,7 @@ OpenStreetMap standard tile servers are not for heavy production traffic. For su
 - Add cache-first behavior (already present in `vsgLayt` approach).
 - Consider paid/self-hosted tile providers for high request rates.
 
-## 12. Minimal Phase Plan
+## 15. Minimal Phase Plan
 
 Phase 1:
 
@@ -191,4 +270,3 @@ Phase 3:
 Phase 4:
 
 - Optional vector overlays (roads/buildings/water) using the same tile key space.
-
