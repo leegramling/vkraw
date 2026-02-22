@@ -264,10 +264,17 @@ public:
         const double wheelDelta = std::clamp(static_cast<double>(e.delta.y), -20.0, 20.0);
         const double zoomScale = std::exp(-wheelDelta * zoomStepPerNotch);
 
-        distance *= zoomScale;
-        const double minAltitudeFt = 100.0;
+        // Scale altitude (not center distance) so near-ground zoom remains controllable.
+        double newAltitudeFt = std::max(0.0, altitudeFt) * zoomScale;
+
+        // Tile shell is currently lifted above the base globe for z-fighting avoidance.
+        // Keep the camera above that shell while debugging tile rendering.
+        const double minAltitudeFt = 500.0;
         const double minDistance = groundRadius + minAltitudeFt;
         const double maxDistance = equatorialRadius * 50.0;
+        const double maxAltitudeFt = std::max(minAltitudeFt, maxDistance - groundRadius);
+        newAltitudeFt = std::clamp(newAltitudeFt, minAltitudeFt, maxAltitudeFt);
+        distance = groundRadius + newAltitudeFt;
         distance = std::clamp(distance, minDistance, maxDistance);
 
         lookAt->eye = lookAt->center + vsg::normalize(eyeDir) * distance;
