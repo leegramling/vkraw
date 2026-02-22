@@ -553,10 +553,22 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             std::cerr << "Failed to create globe scene node." << std::endl;
             return 1;
         }
+        auto globeStateGroup = globeNode.cast<vsg::StateGroup>();
+        if (!globeStateGroup || globeStateGroup->children.empty())
+        {
+            std::cerr << "Failed to create globe state group." << std::endl;
+            return 1;
+        }
+        auto globeMeshNode = globeStateGroup->children.front();
         const bool hideBaseGlobeForOsmDebug = osmEnabled;
-        if (!hideBaseGlobeForOsmDebug) globeTransform->addChild(globeNode);
+        globeTransform->addChild(globeNode);
         auto osmTileLayer = GlobeTileLayer::create(kWgs84EquatorialRadiusFeet * 1.00002, kWgs84PolarRadiusFeet * 1.00002);
-        globeTransform->addChild(osmTileLayer->root());
+        globeStateGroup->addChild(osmTileLayer->root());
+        if (hideBaseGlobeForOsmDebug)
+        {
+            auto it = std::find(globeStateGroup->children.begin(), globeStateGroup->children.end(), globeMeshNode);
+            if (it != globeStateGroup->children.end()) globeStateGroup->children.erase(it);
+        }
 
         const double aspect = static_cast<double>(window->extent2D().width) / static_cast<double>(window->extent2D().height);
         const double startAltitudeFt = 5000.0;
@@ -673,7 +685,6 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             if (inputHandler->consumeWireframeToggleRequest())
             {
                 appState->wireframe = !appState->wireframe;
-                globeTransform->children.clear();
                 bool loadedTexture = false;
                 auto rebuilt = createGlobeNode(earthTexturePath, appState->wireframe, loadedTexture);
                 appState->textureFromFile = loadedTexture;
@@ -682,16 +693,28 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                     std::cerr << "Failed to rebuild globe node." << std::endl;
                     return 1;
                 }
-                if (!hideBaseGlobeForOsmDebug)
+                auto rebuiltStateGroup = rebuilt.cast<vsg::StateGroup>();
+                if (!rebuiltStateGroup || rebuiltStateGroup->children.empty())
                 {
-                    globeTransform->addChild(rebuilt);
-                    baseGlobeVisible = true;
+                    std::cerr << "Failed to rebuild globe state group." << std::endl;
+                    return 1;
+                }
+                globeNode = rebuilt;
+                globeStateGroup = rebuiltStateGroup;
+                globeMeshNode = globeStateGroup->children.front();
+                if (hideBaseGlobeForOsmDebug)
+                {
+                    baseGlobeVisible = false;
+                    auto it = std::find(globeStateGroup->children.begin(), globeStateGroup->children.end(), globeMeshNode);
+                    if (it != globeStateGroup->children.end()) globeStateGroup->children.erase(it);
                 }
                 else
                 {
-                    baseGlobeVisible = false;
+                    baseGlobeVisible = true;
                 }
-                globeTransform->addChild(osmTileLayer->root());
+                globeStateGroup->addChild(osmTileLayer->root());
+                globeTransform->children.clear();
+                globeTransform->addChild(globeNode);
             }
 
             appState->ui.deltaTimeMs = 1000.0f * delta;
@@ -703,6 +726,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             {
                 osmTiles->update(lookAt->eye, globeTransform->matrix, kWgs84EquatorialRadiusFeet, kWgs84PolarRadiusFeet);
                 const auto tileWindow = osmTiles->currentTileWindow();
+                osmTileLayer->syncFromTileWindow(tileWindow);
                 if ((frameCount % 120) == 0)
                 {
                     std::cout << "[OSM] active=" << (osmTiles->active() ? "yes" : "no")
@@ -723,13 +747,13 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             {
                 if (osmCurrentlyActive && baseGlobeVisible)
                 {
-                    auto it = std::find(globeTransform->children.begin(), globeTransform->children.end(), globeNode);
-                    if (it != globeTransform->children.end()) globeTransform->children.erase(it);
+                    auto it = std::find(globeStateGroup->children.begin(), globeStateGroup->children.end(), globeMeshNode);
+                    if (it != globeStateGroup->children.end()) globeStateGroup->children.erase(it);
                     baseGlobeVisible = false;
                 }
                 else if (!osmCurrentlyActive && !baseGlobeVisible)
                 {
-                    globeTransform->children.insert(globeTransform->children.begin(), globeNode);
+                    globeStateGroup->children.insert(globeStateGroup->children.begin(), globeMeshNode);
                     baseGlobeVisible = true;
                 }
             }

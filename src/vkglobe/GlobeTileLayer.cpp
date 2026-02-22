@@ -32,25 +32,6 @@ GlobeTileLayer::GlobeTileLayer(double equatorialRadiusFt, double polarRadiusFt) 
 {
 }
 
-vsg::ref_ptr<vsg::Data> GlobeTileLayer::placeholderImage() const
-{
-    if (placeholderImage_) return placeholderImage_;
-    constexpr uint32_t w = 32;
-    constexpr uint32_t h = 32;
-    auto tex = vsg::ubvec4Array2D::create(w, h, vsg::Data::Properties{VK_FORMAT_R8G8B8A8_UNORM});
-    for (uint32_t y = 0; y < h; ++y)
-    {
-        for (uint32_t x = 0; x < w; ++x)
-        {
-            const bool a = ((x / 4) + (y / 4)) % 2 == 0;
-            tex->set(x, y, a ? vsg::ubvec4(255, 255, 0, 255) : vsg::ubvec4(0, 0, 0, 255));
-        }
-    }
-    tex->dirty();
-    placeholderImage_ = tex;
-    return placeholderImage_;
-}
-
 bool GlobeTileLayer::syncFromTileWindow(const std::vector<TileSample>& tileWindow)
 {
     bool changed = false;
@@ -67,8 +48,7 @@ bool GlobeTileLayer::syncFromTileWindow(const std::vector<TileSample>& tileWindo
             if (it != root_->children.end()) root_->children.erase(it);
         }
 
-        const auto image = sample.loaded && sample.image ? sample.image : placeholderImage();
-        slot.node = buildTileNode(sample.key, image);
+        slot.node = buildTileNode(sample.key);
         if (slot.node) root_->addChild(slot.node);
         slot.key = sample.key;
         slot.hasKey = true;
@@ -78,18 +58,8 @@ bool GlobeTileLayer::syncFromTileWindow(const std::vector<TileSample>& tileWindo
     return changed;
 }
 
-vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key, vsg::ref_ptr<vsg::Data> image) const
+vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key) const
 {
-    if (!image) return {};
-
-    auto builder = vsg::Builder::create();
-    vsg::StateInfo stateInfo;
-    stateInfo.wireframe = false;
-    stateInfo.two_sided = true;
-    stateInfo.lighting = false;
-    stateInfo.image = image;
-    const bool topLeftOrigin = image->properties.origin == vsg::TOP_LEFT;
-
     constexpr uint32_t cols = 24;
     constexpr uint32_t rows = 24;
     const uint32_t numVertices = cols * rows;
@@ -130,7 +100,7 @@ vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key, vsg::r
                 z / (polarRadiusFt_ * polarRadiusFt_));
             n = vsg::normalize(n);
             (*normals)[idx] = vsg::vec3(static_cast<float>(n.x), static_cast<float>(n.y), static_cast<float>(n.z));
-            (*texcoords)[idx] = vsg::vec2(static_cast<float>(u), static_cast<float>(topLeftOrigin ? v : (1.0 - v)));
+            (*texcoords)[idx] = vsg::vec2(static_cast<float>(u), static_cast<float>(1.0 - v));
         }
     }
 
@@ -163,10 +133,7 @@ vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key, vsg::r
     vid->indexCount = static_cast<uint32_t>(indices->size());
     vid->instanceCount = 1;
 
-    auto stateGroup = builder->createStateGroup(stateInfo);
-    if (!stateGroup) return {};
-    stateGroup->addChild(vid);
-    return stateGroup;
+    return vid;
 }
 
 } // namespace vkglobe

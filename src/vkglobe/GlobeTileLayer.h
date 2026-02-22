@@ -33,13 +33,11 @@ private:
         vsg::ref_ptr<vsg::Node> node;
     };
 
-    vsg::ref_ptr<vsg::Node> buildTileNode(const TileKey& key, vsg::ref_ptr<vsg::Data> image) const;
-    vsg::ref_ptr<vsg::Data> placeholderImage() const;
+    vsg::ref_ptr<vsg::Node> buildTileNode(const TileKey& key) const;
 
     double equatorialRadiusFt_ = 0.0;
     double polarRadiusFt_ = 0.0;
     vsg::ref_ptr<vsg::Group> root_;
-    mutable vsg::ref_ptr<vsg::Data> placeholderImage_;
     std::map<std::pair<int, int>, Slot> slots_;
 };
 
