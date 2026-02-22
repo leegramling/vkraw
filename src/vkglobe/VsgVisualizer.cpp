@@ -908,9 +908,30 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
 
         if (osmTiles->enabled())
         {
-            // Build initial OSM tile nodes before first viewer->compile().
-            osmTiles->update(lookAt->eye, globeTransform->matrix, kWgs84EquatorialRadiusFeet, kWgs84PolarRadiusFeet);
-            osmTileLayer->syncFromTileWindow(osmTiles->currentTileWindow());
+            // Startup warmup: preload and assign cached/decoded OSM tiles around the
+            // initial view before the first viewer->compile() so the first rendered
+            // frame can start "active" instead of waiting on frame-loop churn.
+            constexpr int kStartupWarmupPasses = 96;
+            for (int pass = 0; pass < kStartupWarmupPasses; ++pass)
+            {
+                osmTiles->update(lookAt->eye, globeTransform->matrix, kWgs84EquatorialRadiusFeet, kWgs84PolarRadiusFeet);
+                osmTileLayer->syncFromTileWindow(osmTiles->currentTileWindow());
+
+                if (!osmTiles->active()) break;
+
+                const size_t visible = osmTiles->visibleTileCount();
+                const size_t loaded = osmTiles->loadedVisibleTiles().size();
+                if (visible > 0 && loaded >= visible)
+                {
+                    if (pass > 0)
+                    {
+                        std::cout << "[OSM] startup warmup loaded_visible_tiles=" << loaded
+                                  << " visible_tiles=" << visible
+                                  << " passes=" << (pass + 1) << std::endl;
+                    }
+                    break;
+                }
+            }
         }
 
         viewer->assignRecordAndSubmitTaskAndPresentation({commandGraph});
