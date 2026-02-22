@@ -7,6 +7,7 @@
 #include <vsg/core/Object.h>
 #include <vsg/nodes/Group.h>
 #include <vsg/nodes/StateGroup.h>
+#include <vsg/state/Sampler.h>
 
 #include <map>
 #include <utility>
@@ -45,6 +46,7 @@ private:
     double polarRadiusFt_ = 0.0;
     vsg::ref_ptr<vsg::StateGroup> stateTemplate_;
     vsg::ref_ptr<vsg::Data> fallbackImage_;
+    vsg::ref_ptr<vsg::Sampler> tileSampler_;
     vsg::ref_ptr<vsg::Group> root_;
     std::map<std::pair<int, int>, Slot> slots_;
 };

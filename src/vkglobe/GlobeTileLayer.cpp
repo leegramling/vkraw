@@ -32,8 +32,18 @@ GlobeTileLayer::GlobeTileLayer(double equatorialRadiusFt, double polarRadiusFt, 
     polarRadiusFt_(polarRadiusFt),
     stateTemplate_(std::move(stateTemplate)),
     fallbackImage_(std::move(fallbackImage)),
+    tileSampler_(vsg::Sampler::create()),
     root_(vsg::Group::create())
 {
+    if (tileSampler_)
+    {
+        tileSampler_->addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        tileSampler_->addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        tileSampler_->addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        tileSampler_->minFilter = VK_FILTER_LINEAR;
+        tileSampler_->magFilter = VK_FILTER_LINEAR;
+        tileSampler_->mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    }
 }
 
 bool GlobeTileLayer::syncFromTileWindow(const std::vector<TileSample>& tileWindow)
@@ -232,7 +242,7 @@ bool GlobeTileLayer::assignTileImage(vsg::StateGroup& stateGroup, vsg::ref_ptr<v
             newInfos.reserve(di->imageInfoList.size());
             for (auto& oldInfo : di->imageInfoList)
             {
-                auto sampler = oldInfo ? oldInfo->sampler : vsg::Sampler::create();
+                auto sampler = tileSampler_ ? tileSampler_ : (oldInfo ? oldInfo->sampler : vsg::Sampler::create());
                 newInfos.push_back(vsg::ImageInfo::create(sampler, image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
             }
             di->imageInfoList = std::move(newInfos);
