@@ -72,7 +72,7 @@ vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key, vsg::r
     auto builder = vsg::Builder::create();
     vsg::StateInfo stateInfo;
     stateInfo.wireframe = false;
-    stateInfo.two_sided = false;
+    stateInfo.two_sided = true;
     stateInfo.lighting = false;
     stateInfo.image = image;
     const bool topLeftOrigin = image->properties.origin == vsg::TOP_LEFT;
