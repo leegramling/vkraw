@@ -89,6 +89,17 @@ void OsmTileManager::setEnabled(bool enabled)
     }
 }
 
+void OsmTileManager::setMaxZoom(int maxZoom)
+{
+    cfg_.maxZoom = std::clamp(maxZoom, cfg_.minZoom, 22);
+}
+
+void OsmTileManager::setActivationAltitudes(double enableAltitudeFt, double disableAltitudeFt)
+{
+    cfg_.enableAltitudeFt = std::max(0.0, enableAltitudeFt);
+    cfg_.disableAltitudeFt = std::max(cfg_.enableAltitudeFt + 1.0, disableAltitudeFt);
+}
+
 void OsmTileManager::update(const vsg::dvec3& eyeWorld, const vsg::dmat4& globeRotation, double equatorialRadiusFt, double polarRadiusFt)
 {
     if (!enabled_) return;

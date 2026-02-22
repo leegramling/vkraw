@@ -63,6 +63,8 @@ public:
     OsmTileManager(vsg::ref_ptr<vsg::Options> options, Config cfg);
 
     void setEnabled(bool enabled);
+    void setMaxZoom(int maxZoom);
+    void setActivationAltitudes(double enableAltitudeFt, double disableAltitudeFt);
     bool enabled() const { return enabled_; }
     bool active() const { return active_; }
     int currentZoom() const { return currentZoom_; }

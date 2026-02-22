@@ -45,6 +45,13 @@ struct AppState : public vsg::Inherit<vsg::Object, AppState>
     bool wireframe = false;
     bool textureFromFile = false;
     bool exitRequested = false;
+    bool showSettingsWindow = true;
+    bool settingsApplyRequested = false;
+    bool osmEnabledSetting = false;
+    int osmMaxZoomSetting = 19;
+    float osmEnableAltFtSetting = 10000.0f;
+    float osmDisableAltFtSetting = 15000.0f;
+    std::string osmCachePathSetting;
     bool osmEnabled = false;
     bool osmActive = false;
     int osmZoom = 0;
@@ -264,10 +271,27 @@ public:
             }
             if (ImGui::BeginMenu("Window"))
             {
+                ImGui::MenuItem("Settings", nullptr, &state->showSettingsWindow);
                 ImGui::MenuItem("Show ImGui Demo Window", nullptr, &state->ui.showDemoWindow);
                 ImGui::EndMenu();
             }
             ImGui::EndMainMenuBar();
+        }
+        if (state->showSettingsWindow)
+        {
+            ImGui::Begin("Settings", &state->showSettingsWindow);
+            bool changed = false;
+            changed |= ImGui::Checkbox("Enable OSM Tiles", &state->osmEnabledSetting);
+            changed |= ImGui::SliderInt("OSM Max Zoom", &state->osmMaxZoomSetting, 1, 22);
+            changed |= ImGui::InputFloat("OSM Enable Alt (ft)", &state->osmEnableAltFtSetting, 1000.0f, 10000.0f, "%.0f");
+            changed |= ImGui::InputFloat("OSM Disable Alt (ft)", &state->osmDisableAltFtSetting, 1000.0f, 10000.0f, "%.0f");
+            state->osmEnableAltFtSetting = std::max(0.0f, state->osmEnableAltFtSetting);
+            state->osmDisableAltFtSetting = std::max(state->osmEnableAltFtSetting + 1.0f, state->osmDisableAltFtSetting);
+            ImGui::Separator();
+            ImGui::Text("OSM Cache: %s", state->osmCachePathSetting.c_str());
+            ImGui::Text("Startup flags still set initial values.");
+            if (changed) state->settingsApplyRequested = true;
+            ImGui::End();
         }
         state->ui.draw(state->wireframe, state->textureFromFile, state->osmEnabled, state->osmActive, state->osmZoom,
                        state->osmAltitudeFt, state->osmVisibleTiles, state->osmCachedTiles);
@@ -550,6 +574,10 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
 
         auto appState = AppState::create();
         appState->osmEnabled = osmEnabled;
+        appState->osmEnabledSetting = osmEnabled;
+        appState->osmEnableAltFtSetting = static_cast<float>(osmEnableAltFt);
+        appState->osmDisableAltFtSetting = static_cast<float>(osmDisableAltFt);
+        appState->osmCachePathSetting = osmCachePath;
         bool loadedFromFile = false;
         auto globeNode = createGlobeNode(earthTexturePath, appState->wireframe, loadedFromFile);
         appState->textureFromFile = loadedFromFile;
@@ -604,6 +632,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         osmConfig.enableAltitudeFt = osmEnableAltFt;
         osmConfig.disableAltitudeFt = osmDisableAltFt;
         osmConfig.maxZoom = std::clamp(osmMaxZoom, osmConfig.minZoom, 22);
+        appState->osmMaxZoomSetting = osmConfig.maxZoom;
         auto osmTiles = OsmTileManager::create(runtimeOptions, osmConfig);
         osmTiles->setEnabled(osmEnabled);
 
@@ -726,6 +755,14 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             appState->ui.deltaTimeMs = 1000.0f * delta;
             appState->ui.fps = (delta > 0.0f) ? (1.0f / delta) : 0.0f;
             appState->ui.gpuFrameMs = static_cast<float>(latestVsgGpuFrameMs(*profiler));
+
+            if (appState->settingsApplyRequested)
+            {
+                appState->settingsApplyRequested = false;
+                osmTiles->setEnabled(appState->osmEnabledSetting);
+                osmTiles->setMaxZoom(appState->osmMaxZoomSetting);
+                osmTiles->setActivationAltitudes(appState->osmEnableAltFtSetting, appState->osmDisableAltFtSetting);
+            }
 
             bool osmCurrentlyActive = false;
             if (osmTiles->enabled())
