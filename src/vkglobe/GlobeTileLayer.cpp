@@ -114,12 +114,13 @@ vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key) const
             const uint16_t i01 = static_cast<uint16_t>(i00 + 1);
             const uint16_t i10 = static_cast<uint16_t>(i00 + cols);
             const uint16_t i11 = static_cast<uint16_t>(i10 + 1);
+            // Reverse winding to match the inherited globe pipeline cull state.
             (*indices)[write++] = i00;
-            (*indices)[write++] = i01;
-            (*indices)[write++] = i10;
             (*indices)[write++] = i10;
             (*indices)[write++] = i01;
+            (*indices)[write++] = i10;
             (*indices)[write++] = i11;
+            (*indices)[write++] = i01;
         }
     }
 
