@@ -797,7 +797,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         }
 
         const double aspect = static_cast<double>(window->extent2D().width) / static_cast<double>(window->extent2D().height);
-        const double startAltitudeFt = 5000.0;
+        const double startAltitudeFt = 3.2099e+06;
         const vsg::dvec3 startDir = vsg::normalize(worldFromLatLon(kStartLatDeg, kStartLonDeg));
         const vsg::dvec3 startSurface(
             std::sin(vsg::radians(kStartLonDeg)) * std::cos(vsg::radians(kStartLatDeg)) * kWgs84EquatorialRadiusFeet,
