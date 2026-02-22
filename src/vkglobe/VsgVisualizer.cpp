@@ -630,6 +630,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         profilerSettings->gpu_instrumentation_level = 1;
         auto profiler = vsg::Profiler::create(profilerSettings);
         viewer->assignInstrumentation(profiler);
+        bool baseGlobeVisible = true;
 
         viewer->addEventHandler(vsgImGui::SendEventsToImGui::create());
         viewer->addEventHandler(vsg::CloseHandler::create(viewer));
@@ -681,6 +682,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             appState->ui.fps = (delta > 0.0f) ? (1.0f / delta) : 0.0f;
             appState->ui.gpuFrameMs = static_cast<float>(latestVsgGpuFrameMs(*profiler));
 
+            bool osmCurrentlyActive = false;
             if (osmTiles->enabled())
             {
                 osmTiles->update(lookAt->eye, globeTransform->matrix, kWgs84EquatorialRadiusFeet, kWgs84PolarRadiusFeet);
@@ -700,6 +702,19 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                               << " cached_tiles=" << osmTiles->cachedTileCount()
                               << std::endl;
                 }
+                osmCurrentlyActive = osmTiles->active();
+            }
+            // Hide base globe while OSM is active to make streamed tiles unambiguous.
+            if (osmCurrentlyActive && baseGlobeVisible)
+            {
+                auto it = std::find(globeTransform->children.begin(), globeTransform->children.end(), globeNode);
+                if (it != globeTransform->children.end()) globeTransform->children.erase(it);
+                baseGlobeVisible = false;
+            }
+            else if (!osmCurrentlyActive && !baseGlobeVisible)
+            {
+                globeTransform->children.insert(globeTransform->children.begin(), globeNode);
+                baseGlobeVisible = true;
             }
             appState->osmEnabled = osmTiles->enabled();
             appState->osmActive = osmTiles->active();
