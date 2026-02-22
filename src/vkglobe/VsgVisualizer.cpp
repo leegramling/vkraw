@@ -557,11 +557,15 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         auto osmTileLayer = GlobeTileLayer::create(kWgs84EquatorialRadiusFeet * 1.0005, kWgs84PolarRadiusFeet * 1.0005);
         globeTransform->addChild(osmTileLayer->root());
 
-        const double radius = kWgs84EquatorialRadiusFeet;
         const double aspect = static_cast<double>(window->extent2D().width) / static_cast<double>(window->extent2D().height);
         const double startAltitudeFt = 5000.0;
         const vsg::dvec3 startDir = vsg::normalize(worldFromLatLon(kStartLatDeg, kStartLonDeg));
-        const vsg::dvec3 startEye = startDir * (radius + startAltitudeFt);
+        const vsg::dvec3 startSurface(
+            std::sin(vsg::radians(kStartLonDeg)) * std::cos(vsg::radians(kStartLatDeg)) * kWgs84EquatorialRadiusFeet,
+            -std::cos(vsg::radians(kStartLonDeg)) * std::cos(vsg::radians(kStartLatDeg)) * kWgs84EquatorialRadiusFeet,
+            std::sin(vsg::radians(kStartLatDeg)) * kWgs84PolarRadiusFeet);
+        const double startSurfaceRadius = vsg::length(startSurface);
+        const vsg::dvec3 startEye = startDir * (startSurfaceRadius + startAltitudeFt);
         const vsg::dvec3 startUp = vsg::normalize(vsg::cross(vsg::cross(startDir, vsg::dvec3(0.0, 0.0, 1.0)), startDir));
 
         auto lookAt = vsg::LookAt::create(

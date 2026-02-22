@@ -114,7 +114,7 @@ bool OsmTileManager::computeSubCameraGeo(const vsg::dvec3& eyeWorld, const vsg::
 
     const double xy = std::sqrt(hl.x * hl.x + hl.y * hl.y);
     outLatDeg = std::atan2(hl.z, std::max(1e-9, xy)) * (180.0 / kPi);
-    outLonDeg = std::atan2(-hl.x, hl.y) * (180.0 / kPi);
+    outLonDeg = std::atan2(hl.x, -hl.y) * (180.0 / kPi);
     return true;
 }
 
