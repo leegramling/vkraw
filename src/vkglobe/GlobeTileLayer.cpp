@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
+#include <iostream>
 
 namespace vkglobe {
 
@@ -37,8 +39,10 @@ GlobeTileLayer::GlobeTileLayer(double equatorialRadiusFt, double polarRadiusFt, 
 bool GlobeTileLayer::syncFromTileWindow(const std::vector<TileSample>& tileWindow)
 {
     bool changed = false;
+    std::set<std::pair<int, int>> seenOffsets;
     for (const TileSample& sample : tileWindow)
     {
+        seenOffsets.insert({sample.ox, sample.oy});
         auto& slot = slots_[{sample.ox, sample.oy}];
         const bool keyChanged = !slot.hasKey || slot.key.z != sample.key.z || slot.key.x != sample.key.x || slot.key.y != sample.key.y;
         const bool loadChanged = (slot.loaded != sample.loaded);
@@ -56,6 +60,24 @@ bool GlobeTileLayer::syncFromTileWindow(const std::vector<TileSample>& tileWindo
         slot.key = sample.key;
         slot.hasKey = true;
         slot.loaded = sample.loaded;
+        changed = true;
+    }
+
+    for (auto it = slots_.begin(); it != slots_.end(); )
+    {
+        if (seenOffsets.count(it->first) != 0)
+        {
+            ++it;
+            continue;
+        }
+
+        auto& slot = it->second;
+        if (slot.node)
+        {
+            auto childIt = std::find(root_->children.begin(), root_->children.end(), slot.node);
+            if (childIt != root_->children.end()) root_->children.erase(childIt);
+        }
+        it = slots_.erase(it);
         changed = true;
     }
     return changed;
@@ -173,6 +195,8 @@ vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key, vsg::r
 bool GlobeTileLayer::assignTileImage(vsg::StateGroup& stateGroup, vsg::ref_ptr<vsg::Data> image) const
 {
     if (!image) return false;
+    static bool loggedSuccess = false;
+    static bool loggedFailure = false;
     auto tryDescriptorSet = [&](vsg::DescriptorSet& descriptorSet) -> bool
     {
         for (auto& descriptor : descriptorSet.descriptors)
@@ -182,6 +206,13 @@ bool GlobeTileLayer::assignTileImage(vsg::StateGroup& stateGroup, vsg::ref_ptr<v
             auto imageInfo = di->imageInfoList.front();
             imageInfo->imageView = vsg::ImageView::create(vsg::Image::create(image));
             imageInfo->imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            if (!loggedSuccess)
+            {
+                loggedSuccess = true;
+                std::cout << "[OSM] tile texture descriptor assigned (origin="
+                          << (image->properties.origin == vsg::TOP_LEFT ? "top-left" : "bottom-left")
+                          << ", size=" << image->width() << "x" << image->height() << ")\n";
+            }
             return true;
         }
         return false;
@@ -200,6 +231,11 @@ bool GlobeTileLayer::assignTileImage(vsg::StateGroup& stateGroup, vsg::ref_ptr<v
                 if (ds && tryDescriptorSet(*ds)) return true;
             }
         }
+    }
+    if (!loggedFailure)
+    {
+        loggedFailure = true;
+        std::cerr << "[OSM] warning: no DescriptorImage found in tile state template; using inherited globe texture.\n";
     }
     return false;
 }
