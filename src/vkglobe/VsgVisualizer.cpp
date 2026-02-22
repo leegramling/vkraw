@@ -32,6 +32,13 @@ struct AppState : public vsg::Inherit<vsg::Object, AppState>
     vkglobe::UIObject ui;
     bool wireframe = false;
     bool textureFromFile = false;
+    bool exitRequested = false;
+    bool osmEnabled = false;
+    bool osmActive = false;
+    int osmZoom = 0;
+    double osmAltitudeFt = 0.0;
+    size_t osmVisibleTiles = 0;
+    size_t osmCachedTiles = 0;
 };
 
 class GlobeInputHandler : public vsg::Inherit<vsg::Visitor, GlobeInputHandler>
@@ -236,7 +243,17 @@ public:
 
     void record(vsg::CommandBuffer&) const override
     {
-        state->ui.draw(state->wireframe, state->textureFromFile);
+        if (ImGui::BeginMainMenuBar())
+        {
+            if (ImGui::BeginMenu("File"))
+            {
+                if (ImGui::MenuItem("Exit")) state->exitRequested = true;
+                ImGui::EndMenu();
+            }
+            ImGui::EndMainMenuBar();
+        }
+        state->ui.draw(state->wireframe, state->textureFromFile, state->osmEnabled, state->osmActive, state->osmZoom,
+                       state->osmAltitudeFt, state->osmVisibleTiles, state->osmCachedTiles);
     }
 
 private:
@@ -515,6 +532,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         scene->setObject("EllipsoidModel", ellipsoidModel);
 
         auto appState = AppState::create();
+        appState->osmEnabled = osmEnabled;
         bool loadedFromFile = false;
         auto globeNode = createGlobeNode(earthTexturePath, appState->wireframe, loadedFromFile);
         appState->textureFromFile = loadedFromFile;
@@ -581,6 +599,8 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         ImGuiIO& io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
         io.MouseDrawCursor = true;
+        ImGui::GetStyle().ScaleAllSizes(1.5f);
+        io.FontGlobalScale = 1.5f;
 
         auto inputHandler = GlobeInputHandler::create(appState);
         auto globeRotateHandler = GlobeRotateHandler::create(camera, globeTransform, kWgs84EquatorialRadiusFeet, kWgs84PolarRadiusFeet);
@@ -618,6 +638,8 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             }
 
             viewer->handleEvents();
+
+            if (appState->exitRequested) break;
 
             if (inputHandler->consumeWireframeToggleRequest())
             {
@@ -659,6 +681,12 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                               << std::endl;
                 }
             }
+            appState->osmEnabled = osmTiles->enabled();
+            appState->osmActive = osmTiles->active();
+            appState->osmZoom = osmTiles->currentZoom();
+            appState->osmAltitudeFt = osmTiles->currentAltitudeFt();
+            appState->osmVisibleTiles = osmTiles->visibleTileCount();
+            appState->osmCachedTiles = osmTiles->cachedTileCount();
 
             viewer->update();
             viewer->recordAndSubmit();
