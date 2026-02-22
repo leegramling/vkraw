@@ -752,8 +752,9 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                 }
                 osmCurrentlyActive = osmTiles->active();
             }
-            // In OSM debug mode, keep base globe hidden; otherwise hide/show by OSM active state.
-            if (!hideBaseGlobeForOsmDebug)
+            // Keep the base globe visible while OSM tile rendering is still being debugged.
+            const bool hideBaseGlobeWhenOsmActive = false;
+            if (!hideBaseGlobeForOsmDebug && hideBaseGlobeWhenOsmActive)
             {
                 if (osmCurrentlyActive && baseGlobeVisible)
                 {
