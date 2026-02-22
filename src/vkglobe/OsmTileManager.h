@@ -64,6 +64,7 @@ public:
 
     void setEnabled(bool enabled);
     void setMaxZoom(int maxZoom);
+    void setTileRadius(int tileRadius);
     void setActivationAltitudes(double enableAltitudeFt, double disableAltitudeFt);
     bool enabled() const { return enabled_; }
     bool active() const { return active_; }

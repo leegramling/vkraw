@@ -94,6 +94,11 @@ void OsmTileManager::setMaxZoom(int maxZoom)
     cfg_.maxZoom = std::clamp(maxZoom, cfg_.minZoom, 22);
 }
 
+void OsmTileManager::setTileRadius(int tileRadius)
+{
+    cfg_.tileRadius = std::clamp(tileRadius, 1, 16);
+}
+
 void OsmTileManager::setActivationAltitudes(double enableAltitudeFt, double disableAltitudeFt)
 {
     cfg_.enableAltitudeFt = std::max(0.0, enableAltitudeFt);
@@ -165,8 +170,10 @@ int OsmTileManager::chooseZoomForAltitude(double altitudeFt) const
 void OsmTileManager::requestVisibleTiles(double latDeg, double lonDeg, int zoom)
 {
     const int tiles = tileCountForZoom(zoom);
-    const int centerX = static_cast<int>(std::floor(lonToTileX(lonDeg, zoom)));
-    const int centerY = static_cast<int>(std::floor(latToTileY(latDeg, zoom)));
+    const double fx = lonToTileX(lonDeg, zoom);
+    const double fy = latToTileY(latDeg, zoom);
+    const int centerX = static_cast<int>(std::floor(fx + 0.5));
+    const int centerY = static_cast<int>(std::floor(fy + 0.5));
     const int radius = std::max(1, cfg_.tileRadius);
     currentCenterTileX_ = centerX;
     currentCenterTileY_ = centerY;

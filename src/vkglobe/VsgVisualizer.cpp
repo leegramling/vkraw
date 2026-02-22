@@ -54,6 +54,7 @@ struct AppState : public vsg::Inherit<vsg::Object, AppState>
     bool settingsSaveRequested = false;
     bool osmEnabledSetting = false;
     int osmMaxZoomSetting = 19;
+    int osmTileRadiusSetting = 6;
     float osmAltThresholdFtSetting = 10000.0f;
     std::string osmCachePathSetting;
     std::string earthTexturePathSetting;
@@ -321,6 +322,7 @@ public:
             bool changed = false;
             changed |= ImGui::Checkbox("Enable OSM Tiles", &state->osmEnabledSetting);
             changed |= ImGui::SliderInt("OSM Max Zoom", &state->osmMaxZoomSetting, 1, 22);
+            changed |= ImGui::SliderInt("OSM Tile Radius", &state->osmTileRadiusSetting, 1, 12);
             changed |= ImGui::InputFloat("OSM Alt Threshold (ft)", &state->osmAltThresholdFtSetting, 1000.0f, 10000.0f, "%.0f");
             state->osmAltThresholdFtSetting = std::max(0.0f, state->osmAltThresholdFtSetting);
             ImGui::TextUnformatted("Tiles ON at or below threshold, OFF above threshold.");
@@ -395,6 +397,7 @@ struct SavedSettings
     double osmEnableAltFt = 10000.0;
     double osmDisableAltFt = 15000.0;
     int osmMaxZoom = 19;
+    int osmTileRadius = 6;
 };
 
 std::string jsonEscape(const std::string& s)
@@ -491,6 +494,7 @@ bool loadSavedSettings(const std::string& path, SavedSettings& settings)
     parseJsonDoubleField(text, "osm_enable_alt_ft", settings.osmEnableAltFt);
     parseJsonDoubleField(text, "osm_disable_alt_ft", settings.osmDisableAltFt);
     parseJsonIntField(text, "osm_max_zoom", settings.osmMaxZoom);
+    parseJsonIntField(text, "osm_tile_radius", settings.osmTileRadius);
     return true;
 }
 
@@ -508,7 +512,8 @@ bool saveSavedSettings(const std::string& path, const SavedSettings& settings)
         << "  \"osm_cache\": \"" << jsonEscape(settings.osmCachePath) << "\",\n"
         << "  \"osm_enable_alt_ft\": " << settings.osmEnableAltFt << ",\n"
         << "  \"osm_disable_alt_ft\": " << settings.osmDisableAltFt << ",\n"
-        << "  \"osm_max_zoom\": " << settings.osmMaxZoom << "\n"
+        << "  \"osm_max_zoom\": " << settings.osmMaxZoom << ",\n"
+        << "  \"osm_tile_radius\": " << settings.osmTileRadius << "\n"
         << "}\n";
     return out.good();
 }
@@ -713,6 +718,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         double osmEnableAltFt = 10000.0;
         double osmDisableAltFt = 15000.0;
         int osmMaxZoom = 19;
+        int osmTileRadius = 6;
         std::string configPath = "vkglobe.json";
         arguments.read("--seconds", runDurationSeconds);
         arguments.read("--duration", runDurationSeconds);
@@ -727,6 +733,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             osmEnableAltFt = savedSettings.osmEnableAltFt;
             osmDisableAltFt = savedSettings.osmDisableAltFt;
             osmMaxZoom = savedSettings.osmMaxZoom;
+            osmTileRadius = savedSettings.osmTileRadius;
         }
 
         while (arguments.read("--earth-texture", earthTexturePath)) {}
@@ -735,6 +742,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         while (arguments.read("--osm-enable-alt-ft", osmEnableAltFt)) {}
         while (arguments.read("--osm-disable-alt-ft", osmDisableAltFt)) {}
         while (arguments.read("--osm-max-zoom", osmMaxZoom)) {}
+        while (arguments.read("--osm-tile-radius", osmTileRadius)) {}
 
         if (arguments.errors()) return arguments.writeErrorMessages(std::cerr);
 
@@ -757,6 +765,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         auto appState = AppState::create();
         appState->osmEnabled = osmEnabled;
         appState->osmEnabledSetting = osmEnabled;
+        appState->osmTileRadiusSetting = osmTileRadius;
         appState->osmAltThresholdFtSetting = static_cast<float>(osmEnableAltFt);
         appState->osmCachePathSetting = osmCachePath;
         appState->earthTexturePathSetting = earthTexturePath;
@@ -815,7 +824,9 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         osmConfig.enableAltitudeFt = osmEnableAltFt;
         osmConfig.disableAltitudeFt = osmDisableAltFt;
         osmConfig.maxZoom = std::clamp(osmMaxZoom, osmConfig.minZoom, 22);
+        osmConfig.tileRadius = std::clamp(osmTileRadius, 1, 16);
         appState->osmMaxZoomSetting = osmConfig.maxZoom;
+        appState->osmTileRadiusSetting = osmConfig.tileRadius;
         auto osmTiles = OsmTileManager::create(runtimeOptions, osmConfig);
         osmTiles->setEnabled(osmEnabled);
 
@@ -944,6 +955,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                 appState->settingsApplyRequested = false;
                 osmTiles->setEnabled(appState->osmEnabledSetting);
                 osmTiles->setMaxZoom(appState->osmMaxZoomSetting);
+                osmTiles->setTileRadius(appState->osmTileRadiusSetting);
                 osmTiles->setActivationAltitudes(appState->osmAltThresholdFtSetting, appState->osmAltThresholdFtSetting + 1.0f);
                 appState->settingsSaveRequested = true;
             }
@@ -958,6 +970,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                 toSave.osmEnableAltFt = appState->osmAltThresholdFtSetting;
                 toSave.osmDisableAltFt = appState->osmAltThresholdFtSetting + 1.0;
                 toSave.osmMaxZoom = appState->osmMaxZoomSetting;
+                toSave.osmTileRadius = appState->osmTileRadiusSetting;
                 if (!saveSavedSettings(appState->configPathSetting, toSave))
                 {
                     std::cerr << "[Settings] failed to save " << appState->configPathSetting << std::endl;
@@ -1033,6 +1046,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         toSave.osmEnableAltFt = appState->osmAltThresholdFtSetting;
         toSave.osmDisableAltFt = appState->osmAltThresholdFtSetting + 1.0;
         toSave.osmMaxZoom = appState->osmMaxZoomSetting;
+        toSave.osmTileRadius = appState->osmTileRadiusSetting;
         (void)saveSavedSettings(appState->configPathSetting, toSave);
 
         std::cout << "[EXIT] vkglobe status=OK code=0"
