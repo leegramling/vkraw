@@ -175,9 +175,6 @@ vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key, vsg::r
     auto vid = vsg::VertexIndexDraw::create();
     auto colors = vsg::vec4Array::create(numVertices);
     // Debug tint so OSM patches are visually obvious during integration.
-    const float tintR = 0.45f + 0.5f * static_cast<float>((key.x * 17) & 7) / 7.0f;
-    const float tintG = 0.45f + 0.5f * static_cast<float>((key.y * 11) & 7) / 7.0f;
-    const float tintB = 0.45f + 0.5f * static_cast<float>((key.z * 3) & 7) / 7.0f;
     for (uint32_t r = 0; r < rows; ++r)
     {
         for (uint32_t c = 0; c < cols; ++c)
@@ -192,7 +189,8 @@ vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key, vsg::r
             }
             else
             {
-                (*colors)[i] = vsg::vec4(tintR, tintG, tintB, 1.0f);
+                // Keep interior white so the sampled tile texture is not tinted.
+                (*colors)[i] = vsg::vec4(1.0f, 1.0f, 1.0f, 1.0f);
             }
         }
     }
