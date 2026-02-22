@@ -555,7 +555,7 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         }
         const bool hideBaseGlobeForOsmDebug = osmEnabled;
         if (!hideBaseGlobeForOsmDebug) globeTransform->addChild(globeNode);
-        auto osmTileLayer = GlobeTileLayer::create(kWgs84EquatorialRadiusFeet * 1.0020, kWgs84PolarRadiusFeet * 1.0020);
+        auto osmTileLayer = GlobeTileLayer::create(kWgs84EquatorialRadiusFeet * 1.00002, kWgs84PolarRadiusFeet * 1.00002);
         globeTransform->addChild(osmTileLayer->root());
 
         const double aspect = static_cast<double>(window->extent2D().width) / static_cast<double>(window->extent2D().height);
