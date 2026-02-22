@@ -3,6 +3,7 @@
 #include "vkglobe/OsmProjection.h"
 #include "vkglobe/OsmTileFetcher.h"
 
+#include <vsg/all.h>
 #include <vsg/io/read.h>
 
 #include <algorithm>
@@ -44,6 +45,23 @@ bool intersectEllipsoidFromEyeToCenter(const vsg::dvec3& eyeWorld, const vsg::dm
     const vsg::dvec4 hw = globeRotation * vsg::dvec4(localHit.x, localHit.y, localHit.z, 1.0);
     hitWorld = vsg::dvec3(hw.x, hw.y, hw.z);
     return true;
+}
+
+vsg::ref_ptr<vsg::Data> createMissingTileDebugImage()
+{
+    constexpr uint32_t w = 64;
+    constexpr uint32_t h = 64;
+    auto tex = vsg::ubvec4Array2D::create(w, h, vsg::Data::Properties{VK_FORMAT_R8G8B8A8_UNORM});
+    for (uint32_t y = 0; y < h; ++y)
+    {
+        for (uint32_t x = 0; x < w; ++x)
+        {
+            const bool a = ((x / 8) + (y / 8)) % 2 == 0;
+            tex->set(x, y, a ? vsg::ubvec4(255, 0, 255, 255) : vsg::ubvec4(0, 255, 255, 255));
+        }
+    }
+    tex->dirty();
+    return tex;
 }
 
 } // namespace
@@ -149,11 +167,26 @@ void OsmTileManager::fetchAndDecodeBudgeted()
         if (fetchedThisFrame >= cfg_.maxFetchPerFrame) break;
 
         const std::filesystem::path cacheFile = cfg_.cacheRoot / std::to_string(key.z) / std::to_string(key.x) / (std::to_string(key.y) + ".png");
-        if (!downloadOsmTileIfNeeded(key.z, key.x, key.y, cacheFile)) continue;
+        if (!downloadOsmTileIfNeeded(key.z, key.x, key.y, cacheFile))
+        {
+            entry.image = createMissingTileDebugImage();
+            entry.loaded = true;
+            ++fetchedThisFrame;
+            std::cerr << "[OSM] fetch failed z=" << key.z << " x=" << key.x << " y=" << key.y
+                      << " (using debug tile)\n";
+            continue;
+        }
         entry.fetched = true;
 
         auto data = vsg::read_cast<vsg::Data>(cacheFile.string(), options_);
-        if (!data) continue;
+        if (!data)
+        {
+            entry.image = createMissingTileDebugImage();
+            entry.loaded = true;
+            ++fetchedThisFrame;
+            std::cerr << "[OSM] decode failed for '" << cacheFile.string() << "' (using debug tile)\n";
+            continue;
+        }
         entry.image = data;
         entry.loaded = true;
         ++fetchedThisFrame;
