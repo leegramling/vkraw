@@ -562,8 +562,8 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         auto globeMeshNode = globeStateGroup->children.front();
         const bool hideBaseGlobeForOsmDebug = false;
         globeTransform->addChild(globeNode);
-        // Slightly lifted shell to reduce z-fighting while debugging tile visibility.
-        auto osmTileLayer = GlobeTileLayer::create(kWgs84EquatorialRadiusFeet * 1.0001, kWgs84PolarRadiusFeet * 1.0001);
+        // Keep shell offset small so tiles don't get clipped at low altitude startup.
+        auto osmTileLayer = GlobeTileLayer::create(kWgs84EquatorialRadiusFeet * 1.00001, kWgs84PolarRadiusFeet * 1.00001);
         globeStateGroup->addChild(osmTileLayer->root());
         if (hideBaseGlobeForOsmDebug)
         {
