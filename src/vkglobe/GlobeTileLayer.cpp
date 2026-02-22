@@ -174,24 +174,12 @@ vsg::ref_ptr<vsg::Node> GlobeTileLayer::buildTileNode(const TileKey& key, vsg::r
 
     auto vid = vsg::VertexIndexDraw::create();
     auto colors = vsg::vec4Array::create(numVertices);
-    // Debug tint so OSM patches are visually obvious during integration.
     for (uint32_t r = 0; r < rows; ++r)
     {
         for (uint32_t c = 0; c < cols; ++c)
         {
             const uint32_t i = r * cols + c;
-            const bool edge = (r == 0) || (c == 0) || (r == rows - 1) || (c == cols - 1);
-            if (edge)
-            {
-                // Strong border so the tile patch window remains obvious while OSM textures
-                // are not yet bound per-tile.
-                (*colors)[i] = vsg::vec4(1.0f, 0.15f, 0.15f, 1.0f);
-            }
-            else
-            {
-                // Keep interior white so the sampled tile texture is not tinted.
-                (*colors)[i] = vsg::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-            }
+            (*colors)[i] = vsg::vec4(1.0f, 1.0f, 1.0f, 1.0f);
         }
     }
     vid->assignArrays(vsg::DataList{vertices, normals, texcoords, colors});

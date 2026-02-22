@@ -806,7 +806,12 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         }
         auto globeMeshNode = globeStateGroup->children.front();
         auto osmTileFallback = createOsmTileFallbackTexture();
-        auto tileStateTemplate = globeStateGroup;
+        auto tileStateTemplate = vsg::clone(globeStateGroup).cast<vsg::StateGroup>();
+        if (!tileStateTemplate)
+        {
+            std::cerr << "Failed to clone globe state template for OSM tiles." << std::endl;
+            return 1;
+        }
         const bool hideBaseGlobeForOsmDebug = false;
         globeTransform->addChild(globeNode);
         // Keep shell offset small so tiles don't get clipped at low altitude startup.
