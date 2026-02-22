@@ -6,7 +6,7 @@ namespace vkglobe {
 
 class UIObject {
 public:
-    bool showDemoWindow = true;
+    bool showDemoWindow = false;
     float deltaTimeMs = 0.0f;
     float fps = 0.0f;
     float gpuFrameMs = 0.0f;

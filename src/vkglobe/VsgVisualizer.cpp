@@ -264,7 +264,7 @@ public:
             }
             if (ImGui::BeginMenu("Window"))
             {
-                ImGui::MenuItem("ImGui Demo Window", nullptr, &state->ui.showDemoWindow);
+                ImGui::MenuItem("Show ImGui Demo Window", nullptr, &state->ui.showDemoWindow);
                 ImGui::EndMenu();
             }
             ImGui::EndMainMenuBar();
