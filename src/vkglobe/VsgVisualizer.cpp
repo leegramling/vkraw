@@ -262,6 +262,11 @@ public:
                 if (ImGui::MenuItem("Exit")) state->exitRequested = true;
                 ImGui::EndMenu();
             }
+            if (ImGui::BeginMenu("Window"))
+            {
+                ImGui::MenuItem("ImGui Demo Window", nullptr, &state->ui.showDemoWindow);
+                ImGui::EndMenu();
+            }
             ImGui::EndMainMenuBar();
         }
         state->ui.draw(state->wireframe, state->textureFromFile, state->osmEnabled, state->osmActive, state->osmZoom,
