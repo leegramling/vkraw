@@ -10,11 +10,15 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <mutex>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace
 {
@@ -29,6 +33,169 @@ struct AppState : public vsg::Inherit<vsg::Object, AppState>
     vkvsg::UIObject ui;
     bool wireframe = false;
     bool textureFromFile = false;
+};
+
+class CompositeInstrumentation : public vsg::Inherit<vsg::Instrumentation, CompositeInstrumentation>
+{
+public:
+    void add(vsg::ref_ptr<vsg::Instrumentation> instrumentation)
+    {
+        if (instrumentation) instrumentations.push_back(std::move(instrumentation));
+    }
+
+    vsg::ref_ptr<vsg::Instrumentation> shareOrDuplicateForThreadSafety() override
+    {
+        auto shared = CompositeInstrumentation::create();
+        shared->instrumentations.reserve(instrumentations.size());
+        for (const auto& instrumentation : instrumentations)
+        {
+            shared->add(vsg::shareOrDuplicateForThreadSafety(instrumentation));
+        }
+        return shared;
+    }
+
+    void setThreadName(const std::string& name) const override
+    {
+        for (const auto& instrumentation : instrumentations) instrumentation->setThreadName(name);
+    }
+
+    void enterFrame(const vsg::SourceLocation* sl, uint64_t& reference, vsg::FrameStamp& frameStamp) const override
+    {
+        std::vector<uint64_t> nestedReferences;
+        nestedReferences.reserve(instrumentations.size());
+        for (const auto& instrumentation : instrumentations)
+        {
+            uint64_t nestedReference = 0;
+            instrumentation->enterFrame(sl, nestedReference, frameStamp);
+            nestedReferences.push_back(nestedReference);
+        }
+        reference = storeReferences(std::move(nestedReferences));
+    }
+
+    void leaveFrame(const vsg::SourceLocation* sl, uint64_t& reference, vsg::FrameStamp& frameStamp) const override
+    {
+        const auto nestedReferences = consumeReferences(reference);
+        if (nestedReferences.size() != instrumentations.size()) return;
+
+        for (size_t i = 0; i < instrumentations.size(); ++i)
+        {
+            uint64_t nestedReference = nestedReferences[i];
+            instrumentations[i]->leaveFrame(sl, nestedReference, frameStamp);
+        }
+    }
+
+    void enter(const vsg::SourceLocation* sl, uint64_t& reference, const vsg::Object* object = nullptr) const override
+    {
+        std::vector<uint64_t> nestedReferences;
+        nestedReferences.reserve(instrumentations.size());
+        for (const auto& instrumentation : instrumentations)
+        {
+            uint64_t nestedReference = 0;
+            instrumentation->enter(sl, nestedReference, object);
+            nestedReferences.push_back(nestedReference);
+        }
+        reference = storeReferences(std::move(nestedReferences));
+    }
+
+    void leave(const vsg::SourceLocation* sl, uint64_t& reference, const vsg::Object* object = nullptr) const override
+    {
+        const auto nestedReferences = consumeReferences(reference);
+        if (nestedReferences.size() != instrumentations.size()) return;
+
+        for (size_t i = 0; i < instrumentations.size(); ++i)
+        {
+            uint64_t nestedReference = nestedReferences[i];
+            instrumentations[i]->leave(sl, nestedReference, object);
+        }
+    }
+
+    void enterCommandBuffer(const vsg::SourceLocation* sl, uint64_t& reference, vsg::CommandBuffer& commandBuffer) const override
+    {
+        std::vector<uint64_t> nestedReferences;
+        nestedReferences.reserve(instrumentations.size());
+        for (const auto& instrumentation : instrumentations)
+        {
+            uint64_t nestedReference = 0;
+            instrumentation->enterCommandBuffer(sl, nestedReference, commandBuffer);
+            nestedReferences.push_back(nestedReference);
+        }
+        reference = storeReferences(std::move(nestedReferences));
+    }
+
+    void leaveCommandBuffer(const vsg::SourceLocation* sl, uint64_t& reference, vsg::CommandBuffer& commandBuffer) const override
+    {
+        const auto nestedReferences = consumeReferences(reference);
+        if (nestedReferences.size() != instrumentations.size()) return;
+
+        for (size_t i = 0; i < instrumentations.size(); ++i)
+        {
+            uint64_t nestedReference = nestedReferences[i];
+            instrumentations[i]->leaveCommandBuffer(sl, nestedReference, commandBuffer);
+        }
+    }
+
+    void enter(const vsg::SourceLocation* sl, uint64_t& reference, vsg::CommandBuffer& commandBuffer, const vsg::Object* object = nullptr) const override
+    {
+        std::vector<uint64_t> nestedReferences;
+        nestedReferences.reserve(instrumentations.size());
+        for (const auto& instrumentation : instrumentations)
+        {
+            uint64_t nestedReference = 0;
+            instrumentation->enter(sl, nestedReference, commandBuffer, object);
+            nestedReferences.push_back(nestedReference);
+        }
+        reference = storeReferences(std::move(nestedReferences));
+    }
+
+    void leave(const vsg::SourceLocation* sl, uint64_t& reference, vsg::CommandBuffer& commandBuffer, const vsg::Object* object = nullptr) const override
+    {
+        const auto nestedReferences = consumeReferences(reference);
+        if (nestedReferences.size() != instrumentations.size()) return;
+
+        for (size_t i = 0; i < instrumentations.size(); ++i)
+        {
+            uint64_t nestedReference = nestedReferences[i];
+            instrumentations[i]->leave(sl, nestedReference, commandBuffer, object);
+        }
+    }
+
+    void finish() const override
+    {
+        for (const auto& instrumentation : instrumentations) instrumentation->finish();
+    }
+
+private:
+    uint64_t storeReferences(std::vector<uint64_t> nestedReferences) const
+    {
+        const uint64_t key = nextReference.fetch_add(1, std::memory_order_relaxed);
+        std::lock_guard<std::mutex> lock(referenceMutex);
+        referenceMap[key] = std::move(nestedReferences);
+        return key;
+    }
+
+    std::vector<uint64_t> consumeReferences(uint64_t key) const
+    {
+        std::lock_guard<std::mutex> lock(referenceMutex);
+        auto it = referenceMap.find(key);
+        if (it == referenceMap.end()) return {};
+
+        auto nestedReferences = std::move(it->second);
+        referenceMap.erase(it);
+        return nestedReferences;
+    }
+
+    std::vector<vsg::ref_ptr<vsg::Instrumentation>> instrumentations;
+    mutable std::atomic<uint64_t> nextReference{1};
+    mutable std::mutex referenceMutex;
+    mutable std::unordered_map<uint64_t, std::vector<uint64_t>> referenceMap;
+};
+
+class GlobeRenderObject : public vsg::Inherit<vsg::Group, GlobeRenderObject>
+{
+};
+
+class UiRenderObject : public vsg::Inherit<vsg::Group, UiRenderObject>
+{
 };
 
 class GlobeInputHandler : public vsg::Inherit<vsg::Visitor, GlobeInputHandler>
@@ -476,6 +643,7 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
         windowTraits->width = 1280;
         windowTraits->height = 720;
         windowTraits->swapchainPreferences.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+        windowTraits->debugUtils = true;
 
         float runDurationSeconds = 0.0f;
         std::string earthTexturePath;
@@ -493,6 +661,19 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
             return 1;
         }
         viewer->addWindow(window);
+
+        bool hasDebugUtilsLabels = false;
+        if (auto device = window->getOrCreateDevice())
+        {
+            if (auto instance = device->getInstance())
+            {
+                if (auto extensions = instance->getExtensions())
+                {
+                    hasDebugUtilsLabels = (extensions->vkCmdBeginDebugUtilsLabelEXT != nullptr) &&
+                                          (extensions->vkCmdEndDebugUtilsLabelEXT != nullptr);
+                }
+            }
+        }
 
         auto scene = vsg::Group::create();
         auto globeTransform = vsg::MatrixTransform::create();
@@ -527,8 +708,11 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
         auto renderGraph = vsg::RenderGraph::create(window);
         commandGraph->addChild(renderGraph);
 
+        auto globeRenderObject = GlobeRenderObject::create();
+        globeRenderObject->addChild(scene);
+
         auto view = vsg::View::create(camera);
-        view->addChild(scene);
+        view->addChild(globeRenderObject);
         renderGraph->addChild(view);
 
         uint64_t frameCount = 0;
@@ -544,7 +728,9 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
                   << std::endl;
 
         auto renderImGui = vsgImGui::RenderImGui::create(window, GlobeGui::create(appState));
-        renderGraph->addChild(renderImGui);
+        auto uiRenderObject = UiRenderObject::create();
+        uiRenderObject->addChild(renderImGui);
+        renderGraph->addChild(uiRenderObject);
 
         ImGuiIO& io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
@@ -557,7 +743,21 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
         profilerSettings->cpu_instrumentation_level = 0;
         profilerSettings->gpu_instrumentation_level = 1;
         auto profiler = vsg::Profiler::create(profilerSettings);
-        viewer->assignInstrumentation(profiler);
+        if (hasDebugUtilsLabels)
+        {
+            auto gpuAnnotation = vsg::GpuAnnotation::create();
+            gpuAnnotation->labelType = vsg::GpuAnnotation::Object_className;
+
+            auto instrumentation = CompositeInstrumentation::create();
+            instrumentation->add(profiler);
+            instrumentation->add(gpuAnnotation);
+            viewer->assignInstrumentation(instrumentation);
+        }
+        else
+        {
+            std::cerr << "[vkvsg] VK_EXT_debug_utils labels unavailable; using profiler instrumentation only." << std::endl;
+            viewer->assignInstrumentation(profiler);
+        }
 
         viewer->addEventHandler(vsgImGui::SendEventsToImGui::create());
         viewer->addEventHandler(vsg::CloseHandler::create(viewer));

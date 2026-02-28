@@ -330,10 +330,10 @@ public:
             ImGui::Text("OSM Cache: %s", state->osmCachePathSetting.c_str());
             ImGui::Text("Earth Texture: %s", state->earthTexturePathSetting.empty() ? "(procedural fallback)" : state->earthTexturePathSetting.c_str());
             ImGui::Text("Config File: %s", state->configPathSetting.c_str());
-            ImGui::Text("Startup flags still set initial values.");
+            ImGui::TextUnformatted("Startup flags still set initial values.");
             if (ImGui::Button("Apply")) state->settingsApplyRequested = true;
             ImGui::SameLine();
-            if (ImGui::Button("Save to vkglobe.json")) state->settingsSaveRequested = true;
+            if (ImGui::Button("Save to Config File")) state->settingsSaveRequested = true;
             if (changed) state->settingsApplyRequested = true;
             ImGui::End();
         }
@@ -419,6 +419,30 @@ struct SavedSettings
     int osmMaxZoom = 19;
     int osmTileRadius = 6;
 };
+
+void printUsage(std::ostream& out)
+{
+    out << "Usage: vkglobe [options]\n"
+        << "\n"
+        << "JSON config workflow:\n"
+        << "  - Settings are loaded from --config (default: vkglobe.json).\n"
+        << "  - CLI flags override loaded values for this run.\n"
+        << "  - Effective settings are saved back to --config on exit.\n"
+        << "\n"
+        << "Options:\n"
+        << "  --help, -h                 Show this help text and exit.\n"
+        << "  --seconds <float>          Auto-exit after N seconds.\n"
+        << "  --duration <float>         Alias for --seconds.\n"
+        << "  --config <path>            JSON config file path.\n"
+        << "  --earth-texture <path>     Earth texture image path.\n"
+        << "  --osm                      Enable OSM tiles.\n"
+        << "  --osm-cache <path>         OSM cache directory.\n"
+        << "  --osm-enable-alt-ft <num>  OSM on threshold (feet).\n"
+        << "  --osm-disable-alt-ft <num> OSM off threshold (feet).\n"
+        << "  --osm-max-zoom <int>       OSM max zoom.\n"
+        << "  --osm-tile-radius <int>    OSM tile radius around center tile.\n"
+        << std::endl;
+}
 
 std::string jsonEscape(const std::string& s)
 {
@@ -740,9 +764,17 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         int osmMaxZoom = 19;
         int osmTileRadius = 6;
         std::string configPath = "vkglobe.json";
+        bool showHelp = false;
         arguments.read("--seconds", runDurationSeconds);
         arguments.read("--duration", runDurationSeconds);
+        while (arguments.read("--help")) { showHelp = true; }
+        while (arguments.read("-h")) { showHelp = true; }
         while (arguments.read("--config", configPath)) {}
+        if (showHelp)
+        {
+            printUsage(std::cout);
+            return 0;
+        }
 
         SavedSettings savedSettings{};
         if (loadSavedSettings(configPath, savedSettings))
@@ -765,6 +797,19 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         while (arguments.read("--osm-tile-radius", osmTileRadius)) {}
 
         if (arguments.errors()) return arguments.writeErrorMessages(std::cerr);
+
+        if (!std::filesystem::exists(configPath))
+        {
+            SavedSettings initialSettings{};
+            initialSettings.earthTexturePath = earthTexturePath;
+            initialSettings.osmEnabled = osmEnabled;
+            initialSettings.osmCachePath = osmCachePath;
+            initialSettings.osmEnableAltFt = osmEnableAltFt;
+            initialSettings.osmDisableAltFt = osmDisableAltFt;
+            initialSettings.osmMaxZoom = osmMaxZoom;
+            initialSettings.osmTileRadius = osmTileRadius;
+            (void)saveSavedSettings(configPath, initialSettings);
+        }
 
         auto viewer = vsg::Viewer::create();
         auto window = vsg::Window::create(windowTraits);
@@ -804,7 +849,6 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             std::cerr << "Failed to create globe state group." << std::endl;
             return 1;
         }
-        auto globeMeshNode = globeStateGroup->children.front();
         auto osmTileFallback = createOsmTileFallbackTexture();
         auto tileStateTemplate = vsg::clone(globeStateGroup).cast<vsg::StateGroup>();
         if (!tileStateTemplate)
@@ -812,17 +856,11 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
             std::cerr << "Failed to clone globe state template for OSM tiles." << std::endl;
             return 1;
         }
-        const bool hideBaseGlobeForOsmDebug = false;
         globeTransform->addChild(globeNode);
         // Keep shell offset small so tiles don't get clipped at low altitude startup.
         auto osmTileLayer = GlobeTileLayer::create(kWgs84EquatorialRadiusFeet * 1.00001, kWgs84PolarRadiusFeet * 1.00001,
                                                    tileStateTemplate, osmTileFallback);
         globeStateGroup->addChild(osmTileLayer->root());
-        if (hideBaseGlobeForOsmDebug)
-        {
-            auto it = std::find(globeStateGroup->children.begin(), globeStateGroup->children.end(), globeMeshNode);
-            if (it != globeStateGroup->children.end()) globeStateGroup->children.erase(it);
-        }
 
         const double aspect = static_cast<double>(window->extent2D().width) / static_cast<double>(window->extent2D().height);
         const double startAltitudeFt = 3.2099e+06;
@@ -900,8 +938,6 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
         profilerSettings->gpu_instrumentation_level = 1;
         auto profiler = vsg::Profiler::create(profilerSettings);
         viewer->assignInstrumentation(profiler);
-        bool baseGlobeVisible = !hideBaseGlobeForOsmDebug;
-
         viewer->addEventHandler(vsgImGui::SendEventsToImGui::create());
         viewer->addEventHandler(vsg::CloseHandler::create(viewer));
         viewer->addEventHandler(globeRotateHandler);
@@ -979,17 +1015,6 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                 }
                 globeNode = rebuilt;
                 globeStateGroup = rebuiltStateGroup;
-                globeMeshNode = globeStateGroup->children.front();
-                if (hideBaseGlobeForOsmDebug)
-                {
-                    baseGlobeVisible = false;
-                    auto it = std::find(globeStateGroup->children.begin(), globeStateGroup->children.end(), globeMeshNode);
-                    if (it != globeStateGroup->children.end()) globeStateGroup->children.erase(it);
-                }
-                else
-                {
-                    baseGlobeVisible = true;
-                }
                 globeStateGroup->addChild(osmTileLayer->root());
                 globeTransform->children.clear();
                 globeTransform->addChild(globeNode);
@@ -1026,7 +1051,6 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                 }
             }
 
-            bool osmCurrentlyActive = false;
             if (osmTiles->enabled())
             {
                 osmTiles->update(lookAt->eye, globeTransform->matrix, kWgs84EquatorialRadiusFeet, kWgs84PolarRadiusFeet);
@@ -1054,23 +1078,6 @@ int vkglobe::VsgVisualizer::run(int argc, char** argv)
                               << " loaded_visible_tiles=" << osmTiles->loadedVisibleTiles().size()
                               << " cached_tiles=" << osmTiles->cachedTileCount()
                               << std::endl;
-                }
-                osmCurrentlyActive = osmTiles->active();
-            }
-            // Keep the base globe visible while OSM tile rendering is still being debugged.
-            const bool hideBaseGlobeWhenOsmActive = false;
-            if (!hideBaseGlobeForOsmDebug && hideBaseGlobeWhenOsmActive)
-            {
-                if (osmCurrentlyActive && baseGlobeVisible)
-                {
-                    auto it = std::find(globeStateGroup->children.begin(), globeStateGroup->children.end(), globeMeshNode);
-                    if (it != globeStateGroup->children.end()) globeStateGroup->children.erase(it);
-                    baseGlobeVisible = false;
-                }
-                else if (!osmCurrentlyActive && !baseGlobeVisible)
-                {
-                    globeStateGroup->children.insert(globeStateGroup->children.begin(), globeMeshNode);
-                    baseGlobeVisible = true;
                 }
             }
             appState->osmEnabled = osmTiles->enabled();
