@@ -175,6 +175,8 @@ if(VKRAW_BUILD_VKVSG)
     add_executable(vkvsg
         src/vkvsg/main.cpp
         src/vkvsg/VsgVisualizer.cpp
+        src/vkvsg/LineObject.cpp
+        src/vkvsg/TileGeo.cpp
     )
 
     target_include_directories(vkvsg PRIVATE src)
