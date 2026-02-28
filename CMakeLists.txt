@@ -94,38 +94,44 @@ endif()
 set(SHADER_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
 file(MAKE_DIRECTORY ${SHADER_OUTPUT_DIR})
 
+set(VKRAW_SHADER_SOURCES
+    cube.vert
+    cube.frag
+    equator_line.vert
+    equator_line.frag
+)
+set(VKRAW_SHADER_OUTPUTS "")
+
 if(VK_SHADER_COMPILER)
-    add_custom_command(
-        OUTPUT ${SHADER_OUTPUT_DIR}/cube.vert.spv
-        COMMAND ${VK_SHADER_COMPILER} ${VK_SHADER_ARGS} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/cube.vert -o ${SHADER_OUTPUT_DIR}/cube.vert.spv
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/cube.vert
-        VERBATIM
-    )
+    foreach(shader_src ${VKRAW_SHADER_SOURCES})
+        set(shader_in ${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader_src})
+        set(shader_out ${SHADER_OUTPUT_DIR}/${shader_src}.spv)
+        list(APPEND VKRAW_SHADER_OUTPUTS ${shader_out})
 
-    add_custom_command(
-        OUTPUT ${SHADER_OUTPUT_DIR}/cube.frag.spv
-        COMMAND ${VK_SHADER_COMPILER} ${VK_SHADER_ARGS} ${CMAKE_CURRENT_SOURCE_DIR}/shaders/cube.frag -o ${SHADER_OUTPUT_DIR}/cube.frag.spv
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/cube.frag
-        VERBATIM
-    )
+        add_custom_command(
+            OUTPUT ${shader_out}
+            COMMAND ${VK_SHADER_COMPILER} ${VK_SHADER_ARGS} ${shader_in} -o ${shader_out}
+            DEPENDS ${shader_in}
+            VERBATIM
+        )
+    endforeach()
 else()
-    add_custom_command(
-        OUTPUT ${SHADER_OUTPUT_DIR}/cube.vert.spv
-        COMMAND ${CMAKE_COMMAND} -E touch ${SHADER_OUTPUT_DIR}/cube.vert.spv
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/cube.vert
-        VERBATIM
-    )
+    foreach(shader_src ${VKRAW_SHADER_SOURCES})
+        set(shader_in ${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader_src})
+        set(shader_out ${SHADER_OUTPUT_DIR}/${shader_src}.spv)
+        list(APPEND VKRAW_SHADER_OUTPUTS ${shader_out})
 
-    add_custom_command(
-        OUTPUT ${SHADER_OUTPUT_DIR}/cube.frag.spv
-        COMMAND ${CMAKE_COMMAND} -E touch ${SHADER_OUTPUT_DIR}/cube.frag.spv
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/cube.frag
-        VERBATIM
-    )
+        add_custom_command(
+            OUTPUT ${shader_out}
+            COMMAND ${CMAKE_COMMAND} -E touch ${shader_out}
+            DEPENDS ${shader_in}
+            VERBATIM
+        )
+    endforeach()
 endif()
 
 add_custom_target(shaders ALL
-    DEPENDS ${SHADER_OUTPUT_DIR}/cube.vert.spv ${SHADER_OUTPUT_DIR}/cube.frag.spv
+    DEPENDS ${VKRAW_SHADER_OUTPUTS}
 )
 
 add_executable(vkraw
@@ -187,6 +193,8 @@ if(VKRAW_BUILD_VKVSG)
         target_compile_definitions(vkvsg PRIVATE VK_USE_PLATFORM_WIN32_KHR)
     endif()
     target_compile_definitions(vkvsg PRIVATE VKVSG_EXAMPLES_DIR="${VSG_DEPS_INSTALL_DIR}/share/vsgExamples")
+    target_compile_definitions(vkvsg PRIVATE VKVSG_SHADER_DIR="${SHADER_OUTPUT_DIR}")
+    add_dependencies(vkvsg shaders)
 
     add_executable(vkglobe
         src/vkglobe/main.cpp
@@ -213,4 +221,6 @@ if(VKRAW_BUILD_VKVSG)
         target_compile_definitions(vkglobe PRIVATE VK_USE_PLATFORM_WIN32_KHR)
     endif()
     target_compile_definitions(vkglobe PRIVATE VKVSG_EXAMPLES_DIR="${VSG_DEPS_INSTALL_DIR}/share/vsgExamples")
+    target_compile_definitions(vkglobe PRIVATE VKVSG_SHADER_DIR="${SHADER_OUTPUT_DIR}")
+    add_dependencies(vkglobe shaders)
 endif()

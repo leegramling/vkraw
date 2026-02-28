@@ -3,3 +3,6 @@ build-*/
 .vscode/
 .idea/
 .DS_Store
+cache/
+textures/HYP_50M_SR_W*
+!textures/HYP_50M_SR_W_4k.jpg

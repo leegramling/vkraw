@@ -1,5 +1,5 @@
 {
-  "earth_texture": "textures/HYP_50M_SR_W_4k.jpg",
+  "earth_texture": "textures/HYP_50M_SR_W.jpg",
   "osm_enabled": true,
   "osm_cache": "cache/osm",
   "osm_enable_alt_ft": 800000,

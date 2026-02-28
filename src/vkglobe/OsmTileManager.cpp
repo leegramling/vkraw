@@ -192,9 +192,6 @@ void OsmTileManager::requestVisibleTiles(double latDeg, double lonDeg, int zoom)
 
 void OsmTileManager::fetchAndDecodeBudgeted()
 {
-    static int loggedCacheHits = 0;
-    static int loggedFetches = 0;
-    static int loggedDecodes = 0;
     int fetchedThisFrame = 0;
     for (const TileKey& key : visibleTiles_)
     {
@@ -203,13 +200,6 @@ void OsmTileManager::fetchAndDecodeBudgeted()
         if (fetchedThisFrame >= cfg_.maxFetchPerFrame) break;
 
         const std::filesystem::path cacheFile = cfg_.cacheRoot / std::to_string(key.z) / std::to_string(key.x) / (std::to_string(key.y) + ".png");
-        const bool cacheExistsBefore = std::filesystem::exists(cacheFile);
-        if (cacheExistsBefore && loggedCacheHits < 8)
-        {
-            ++loggedCacheHits;
-            std::cout << "[OSM] cache hit z=" << key.z << " x=" << key.x << " y=" << key.y
-                      << " file='" << cacheFile.string() << "'\n";
-        }
         if (!downloadOsmTileIfNeeded(key.z, key.x, key.y, cacheFile))
         {
             entry.image = createMissingTileDebugImage();
@@ -218,12 +208,6 @@ void OsmTileManager::fetchAndDecodeBudgeted()
             std::cerr << "[OSM] fetch failed z=" << key.z << " x=" << key.x << " y=" << key.y
                       << " (using debug tile)\n";
             continue;
-        }
-        if (!cacheExistsBefore && loggedFetches < 8)
-        {
-            ++loggedFetches;
-            std::cout << "[OSM] downloaded z=" << key.z << " x=" << key.x << " y=" << key.y
-                      << " file='" << cacheFile.string() << "'\n";
         }
         entry.fetched = true;
 
@@ -238,15 +222,6 @@ void OsmTileManager::fetchAndDecodeBudgeted()
         }
         entry.image = data;
         entry.loaded = true;
-        if (loggedDecodes < 12)
-        {
-            ++loggedDecodes;
-            std::cout << "[OSM] decode ok z=" << key.z << " x=" << key.x << " y=" << key.y
-                      << " size=" << data->width() << "x" << data->height()
-                      << " origin=" << (data->properties.origin == vsg::TOP_LEFT ? "top-left" : "bottom-left")
-                      << " format=" << data->properties.format
-                      << "\n";
-        }
         ++fetchedThisFrame;
     }
 }

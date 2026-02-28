@@ -14,8 +14,11 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <fstream>
 #include <iostream>
 #include <mutex>
+#include <regex>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -194,9 +197,36 @@ class GlobeRenderObject : public vsg::Inherit<vsg::Group, GlobeRenderObject>
 {
 };
 
+class EquatorRenderObject : public vsg::Inherit<vsg::Group, EquatorRenderObject>
+{
+};
+
 class UiRenderObject : public vsg::Inherit<vsg::Group, UiRenderObject>
 {
 };
+
+class EquatorLineDraw : public vsg::Inherit<vsg::VertexIndexDraw, EquatorLineDraw>
+{
+};
+
+bool parseJsonStringField(const std::string& text, const char* key, std::string& out)
+{
+    const std::regex re(std::string("\"") + key + R"__("\s*:\s*"((?:\\.|[^"])*)")__");
+    std::smatch m;
+    if (!std::regex_search(text, m, re)) return false;
+    out = m[1].str();
+    return true;
+}
+
+bool loadEarthTexturePathFromConfig(const std::string& path, std::string& earthTexturePath)
+{
+    std::ifstream in(path);
+    if (!in) return false;
+
+    std::stringstream buffer;
+    buffer << in.rdbuf();
+    return parseJsonStringField(buffer.str(), "earth_texture", earthTexturePath);
+}
 
 class GlobeInputHandler : public vsg::Inherit<vsg::Visitor, GlobeInputHandler>
 {
@@ -594,6 +624,94 @@ vsg::ref_ptr<vsg::Node> createGlobeNode(const std::string& texturePath, bool wir
     return stateGroup;
 }
 
+vsg::ref_ptr<vsg::Node> createEquatorLineNode()
+{
+    auto stateGroup = vsg::StateGroup::create();
+
+#ifndef VKVSG_SHADER_DIR
+#define VKVSG_SHADER_DIR ""
+#endif
+
+    const std::string vertPath = std::string(VKVSG_SHADER_DIR) + "/equator_line.vert.spv";
+    const std::string fragPath = std::string(VKVSG_SHADER_DIR) + "/equator_line.frag.spv";
+    auto vertexShader = vsg::ShaderStage::read(VK_SHADER_STAGE_VERTEX_BIT, "main", vertPath);
+    auto fragmentShader = vsg::ShaderStage::read(VK_SHADER_STAGE_FRAGMENT_BIT, "main", fragPath);
+    if (!vertexShader || !fragmentShader) return {};
+
+    vsg::VertexInputState::Bindings bindings{
+        VkVertexInputBindingDescription{0, sizeof(vsg::vec3), VK_VERTEX_INPUT_RATE_VERTEX},
+        VkVertexInputBindingDescription{1, sizeof(vsg::vec4), VK_VERTEX_INPUT_RATE_VERTEX}};
+
+    vsg::VertexInputState::Attributes attributes{
+        VkVertexInputAttributeDescription{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
+        VkVertexInputAttributeDescription{1, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0}};
+
+    auto rasterizationState = vsg::RasterizationState::create();
+    rasterizationState->cullMode = VK_CULL_MODE_NONE;
+
+    auto depthStencilState = vsg::DepthStencilState::create();
+    depthStencilState->depthTestEnable = VK_FALSE;
+    depthStencilState->depthWriteEnable = VK_FALSE;
+
+    auto dynamicState = vsg::DynamicState::create();
+    dynamicState->dynamicStates = {VK_DYNAMIC_STATE_LINE_WIDTH};
+
+    vsg::GraphicsPipelineStates pipelineStates{
+        vsg::VertexInputState::create(bindings, attributes),
+        vsg::InputAssemblyState::create(VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_FALSE),
+        rasterizationState,
+        vsg::MultisampleState::create(),
+        vsg::ColorBlendState::create(),
+        depthStencilState,
+        dynamicState};
+
+    vsg::PushConstantRanges pushConstantRanges{
+        {VK_SHADER_STAGE_VERTEX_BIT, 0, 128}};
+
+    auto pipelineLayout = vsg::PipelineLayout::create(vsg::DescriptorSetLayouts{}, pushConstantRanges);
+    auto graphicsPipeline = vsg::GraphicsPipeline::create(pipelineLayout, vsg::ShaderStages{vertexShader, fragmentShader}, pipelineStates);
+    stateGroup->add(vsg::BindGraphicsPipeline::create(graphicsPipeline));
+
+    constexpr uint32_t segmentCount = 256;
+    auto vertices = vsg::vec3Array::create(segmentCount);
+    auto colors = vsg::vec4Array::create(segmentCount);
+
+    const double radius = kWgs84EquatorialRadiusFeet * 1.002;
+    for (uint32_t i = 0; i < segmentCount; ++i)
+    {
+        const double t = (static_cast<double>(i) / static_cast<double>(segmentCount)) * (2.0 * vsg::PI);
+        const float x = static_cast<float>(-std::sin(t) * radius);
+        const float y = static_cast<float>(std::cos(t) * radius);
+        (*vertices)[i] = vsg::vec3(x, y, 0.0f);
+        (*colors)[i] = vsg::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+    }
+
+    auto indices = vsg::ushortArray::create(segmentCount * 2);
+    uint32_t write = 0;
+    for (uint32_t i = 0; i < segmentCount; ++i)
+    {
+        const uint16_t i0 = static_cast<uint16_t>(i);
+        const uint16_t i1 = static_cast<uint16_t>((i + 1) % segmentCount);
+        (*indices)[write++] = i0;
+        (*indices)[write++] = i1;
+    }
+
+    auto equatorDraw = EquatorLineDraw::create();
+    equatorDraw->assignArrays(vsg::DataList{vertices, colors});
+    equatorDraw->assignIndices(indices);
+    equatorDraw->indexCount = static_cast<uint32_t>(indices->size());
+    equatorDraw->instanceCount = 1;
+
+    auto equatorCommands = vsg::Commands::create();
+    equatorCommands->addChild(vsg::SetLineWidth::create(3.0f));
+    equatorCommands->addChild(equatorDraw);
+
+    stateGroup->addChild(equatorCommands);
+    auto equatorRenderObject = EquatorRenderObject::create();
+    equatorRenderObject->addChild(stateGroup);
+    return equatorRenderObject;
+}
+
 double latestVsgGpuFrameMs(const vsg::Profiler& profiler)
 {
     if (!profiler.log || profiler.log->frameIndices.empty())
@@ -647,8 +765,11 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
 
         float runDurationSeconds = 0.0f;
         std::string earthTexturePath;
+        std::string configPath = "vkvsg.json";
         arguments.read("--seconds", runDurationSeconds);
         arguments.read("--duration", runDurationSeconds);
+        while (arguments.read("--config", configPath)) {}
+        loadEarthTexturePathFromConfig(configPath, earthTexturePath);
         while (arguments.read("--earth-texture", earthTexturePath)) {}
 
         if (arguments.errors()) return arguments.writeErrorMessages(std::cerr);
@@ -692,6 +813,16 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
             return 1;
         }
         globeTransform->addChild(globeNode);
+
+        auto equatorNode = createEquatorLineNode();
+        if (!equatorNode)
+        {
+            std::cerr << "[vkvsg] Failed to create equator line node; continuing without equator." << std::endl;
+        }
+        else
+        {
+            globeTransform->addChild(equatorNode);
+        }
 
         const double radius = kWgs84EquatorialRadiusFeet;
         const double aspect = static_cast<double>(window->extent2D().width) / static_cast<double>(window->extent2D().height);
@@ -800,6 +931,8 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
                     return 1;
                 }
                 globeTransform->addChild(rebuilt);
+                auto rebuiltEquator = createEquatorLineNode();
+                if (rebuiltEquator) globeTransform->addChild(rebuiltEquator);
             }
 
             appState->ui.deltaTimeMs = 1000.0f * delta;

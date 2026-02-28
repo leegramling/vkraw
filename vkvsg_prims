@@ -1,0 +1,137 @@
+# vkvsg_prims
+
+This note is based only on local VSG source in `../vsg_deps/VulkanSceneGraph`.
+
+## Primitive topology in VSG
+
+In VSG, primitive topology is carried by `vsg::InputAssemblyState::topology` (`VkPrimitiveTopology`) and defaults to `VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST`.
+
+- Source: `include/vsg/state/InputAssemblyState.h`, `src/vsg/state/InputAssemblyState.cpp`
+
+For dynamic topology changes at record time, VSG also provides `vsg::SetPrimitiveTopology`, which records `vkCmdSetPrimitiveTopology` if the device extension function pointer is available.
+
+- Source: `include/vsg/commands/SetPrimitiveTopology.h`, `src/vsg/commands/SetPrimitiveTopology.cpp`
+
+## Primitive types VSG explicitly decomposes
+
+`vsg::PrimitiveFunctor` explicitly implements decomposition for:
+
+- `VK_PRIMITIVE_TOPOLOGY_POINT_LIST`
+- `VK_PRIMITIVE_TOPOLOGY_LINE_LIST`
+- `VK_PRIMITIVE_TOPOLOGY_LINE_STRIP`
+- `VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST`
+- `VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP`
+- `VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN`
+
+It explicitly does not implement (warns):
+
+- `VK_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY`
+- `VK_PRIMITIVE_TOPOLOGY_LINE_STRIP_WITH_ADJACENCY`
+- `VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY`
+- `VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_WITH_ADJACENCY`
+- `VK_PRIMITIVE_TOPOLOGY_PATCH_LIST`
+
+- Source: `include/vsg/utils/PrimitiveFunctor.h`
+
+## How primitives are added to the scene graph
+
+The standard pattern is:
+
+1. Build geometry/draw command node (`VertexDraw`, `VertexIndexDraw`, or `Geometry`).
+2. Put it under a `StateGroup` that holds pipeline/state commands.
+3. Insert into parent with `Group::addChild`.
+
+- `Group::addChild` stores child nodes.
+- `StateGroup` stores `stateCommands` and children.
+- `VertexDraw` records `vkCmdDraw`.
+- `VertexIndexDraw` records `vkCmdDrawIndexed`.
+- `Geometry` binds arrays/indices and records its internal draw commands.
+
+- Source:
+  - `include/vsg/nodes/Group.h`
+  - `include/vsg/nodes/StateGroup.h`
+  - `include/vsg/nodes/VertexDraw.h`, `src/vsg/nodes/VertexDraw.cpp`
+  - `include/vsg/nodes/VertexIndexDraw.h`, `src/vsg/nodes/VertexIndexDraw.cpp`
+  - `include/vsg/nodes/Geometry.h`, `src/vsg/nodes/Geometry.cpp`
+
+## When compile is needed
+
+Compile is needed when Vulkan objects for nodes/state are not yet created for the current context/view/device.
+
+- `CompileTraversal` walks scene graph and calls `compile(context)` on compilable objects/commands.
+- Source: `include/vsg/app/CompileTraversal.h`, `src/vsg/app/CompileTraversal.cpp`
+
+### Typical compile triggers
+
+- New pipeline/state/descriptor objects.
+- New geometry/buffer/image resources.
+- First use of an object in a context/view.
+
+`GraphicsPipeline::compile` creates pipeline implementation on first compile for a `viewID` and reuses if compatible pipeline states already exist.
+
+- Source: `src/vsg/state/GraphicsPipeline.cpp`
+
+## `vsg::Geometry` vs `vsg::Builder`
+
+## `vsg::Geometry`
+
+`vsg::Geometry` is a command node with:
+
+- `arrays` (vertex buffers as `BufferInfoList`)
+- optional `indices`
+- `commands` (draw commands like `Draw`/`DrawIndexed`)
+
+Its `compile()` compiles commands, creates/transfers buffers if needed, and caches Vulkan array bindings.  
+Its `record()` binds vertex/index buffers and records child commands.
+
+- Source: `include/vsg/nodes/Geometry.h`, `src/vsg/nodes/Geometry.cpp`
+
+## `vsg::Builder`
+
+`vsg::Builder` creates subgraphs for built-in shapes (Box/Capsule/Cone/Cylinder/Disk/Quad/Sphere/HeightField).  
+It builds a `VertexIndexDraw` plus a `StateGroup`, and can add an optional `CullNode`.
+
+Important details from code:
+
+- `StateInfo.wireframe` causes `InputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST`.
+- `decorateAndCompileIfRequired()` calls `compileTraversal->compile(subgraph)` if a compile traversal has been assigned.
+
+- Source: `include/vsg/utils/Builder.h`, `src/vsg/utils/Builder.cpp`
+
+## Dynamic objects, uniforms, and recompilation
+
+VSG tracks data updates with `vsg::Data::dirty()` and `ModifiedCount`.
+
+- Source: `include/vsg/core/Data.h`
+
+`BufferInfo::requiresCopy/syncModifiedCounts` checks whether associated `Data` changed.
+
+- Source: `include/vsg/state/BufferInfo.h`
+
+`TransferTask` is designed to transfer dynamic data every frame when modification counts change, split into:
+
+- `TRANSFER_BEFORE_RECORD_TRAVERSAL`
+- `TRANSFER_AFTER_RECORD_TRAVERSAL`
+
+Selection depends on `DataVariance`:
+
+- `DYNAMIC_DATA` (updated before record)
+- `DYNAMIC_DATA_TRANSFER_AFTER_RECORD` (updated during record)
+
+- Source:
+  - `include/vsg/core/Data.h`
+  - `include/vsg/app/TransferTask.h`
+  - `src/vsg/app/TransferTask.cpp`
+  - `src/vsg/app/RecordAndSubmitTask.cpp`
+
+### Practical compile rules from source behavior
+
+- Changing values inside existing `Data` (and calling `dirty()`) does not require rebuilding pipelines; it requires transfer/update.
+- Push constants (`vsg::PushConstants`) are recorded each frame via `vkCmdPushConstants`; this is command recording, not pipeline compilation.
+  - Source: `src/vsg/state/PushConstants.cpp`
+- `DescriptorSet::compile()` allocates/assigns once per device implementation; `BindDescriptorSet::compile()` also early-outs once compiled.
+  - If descriptor-set structure/layout changes, create/release/recompile descriptor objects.
+  - Source: `src/vsg/state/DescriptorSet.cpp`, `src/vsg/state/BindDescriptorSet.cpp`
+- Static topology changes through `InputAssemblyState` are part of pipeline state, so they follow pipeline compile path.
+- Dynamic topology command (`SetPrimitiveTopology`) can switch topology at record time when supported by the extension hook.
+
