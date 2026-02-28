@@ -209,6 +209,47 @@ class EquatorLineDraw : public vsg::Inherit<vsg::VertexIndexDraw, EquatorLineDra
 {
 };
 
+class DebugLabelBegin : public vsg::Inherit<vsg::Command, DebugLabelBegin>
+{
+public:
+    DebugLabelBegin(std::string inLabel, vsg::vec4 inColor = vsg::vec4(1.0f, 1.0f, 1.0f, 1.0f)) :
+        label(std::move(inLabel)),
+        color(inColor)
+    {
+    }
+
+    void record(vsg::CommandBuffer& commandBuffer) const override
+    {
+        auto extensions = commandBuffer.getDevice()->getInstance()->getExtensions();
+        if (!extensions || !extensions->vkCmdBeginDebugUtilsLabelEXT) return;
+
+        VkDebugUtilsLabelEXT markerInfo{};
+        markerInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+        markerInfo.pLabelName = label.c_str();
+        markerInfo.color[0] = color.r;
+        markerInfo.color[1] = color.g;
+        markerInfo.color[2] = color.b;
+        markerInfo.color[3] = color.a;
+
+        extensions->vkCmdBeginDebugUtilsLabelEXT(commandBuffer, &markerInfo);
+    }
+
+private:
+    std::string label;
+    vsg::vec4 color;
+};
+
+class DebugLabelEnd : public vsg::Inherit<vsg::Command, DebugLabelEnd>
+{
+public:
+    void record(vsg::CommandBuffer& commandBuffer) const override
+    {
+        auto extensions = commandBuffer.getDevice()->getInstance()->getExtensions();
+        if (!extensions || !extensions->vkCmdEndDebugUtilsLabelEXT) return;
+        extensions->vkCmdEndDebugUtilsLabelEXT(commandBuffer);
+    }
+};
+
 bool parseJsonStringField(const std::string& text, const char* key, std::string& out)
 {
     const std::regex re(std::string("\"") + key + R"__("\s*:\s*"((?:\\.|[^"])*)")__");
@@ -703,8 +744,10 @@ vsg::ref_ptr<vsg::Node> createEquatorLineNode()
     equatorDraw->instanceCount = 1;
 
     auto equatorCommands = vsg::Commands::create();
+    equatorCommands->addChild(DebugLabelBegin::create("EquatorLineDraw", vsg::vec4(1.0f, 1.0f, 1.0f, 1.0f)));
     equatorCommands->addChild(vsg::SetLineWidth::create(3.0f));
     equatorCommands->addChild(equatorDraw);
+    equatorCommands->addChild(DebugLabelEnd::create());
 
     stateGroup->addChild(equatorCommands);
     auto equatorRenderObject = EquatorRenderObject::create();
@@ -758,6 +801,10 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
 
         auto windowTraits = vsg::WindowTraits::create(arguments);
         windowTraits->windowTitle = "vkvsg";
+        if (std::find(windowTraits->instanceExtensionNames.begin(), windowTraits->instanceExtensionNames.end(), VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == windowTraits->instanceExtensionNames.end())
+        {
+            windowTraits->instanceExtensionNames.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        }
         windowTraits->width = 1280;
         windowTraits->height = 720;
         windowTraits->swapchainPreferences.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
