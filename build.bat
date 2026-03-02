@@ -98,11 +98,11 @@ if errorlevel 1 exit /b 1
 set "CORNELL_TARGET="
 set "TARGET_HELP_FILE=%BUILD_DIR%\_targets.txt"
 cmake --build "%BUILD_DIR%" %CFG% --target help > "%TARGET_HELP_FILE%" 2>&1
-findstr /R /C:"^... vkcornell_vc$" "%TARGET_HELP_FILE%" >nul
+findstr /I /C:"vkcornell_vc" "%TARGET_HELP_FILE%" >nul
 if not errorlevel 1 (
   set "CORNELL_TARGET=vkcornell_vc"
 ) else (
-  findstr /R /C:"^... vkcornell$" "%TARGET_HELP_FILE%" >nul
+  findstr /I /C:"vkcornell" "%TARGET_HELP_FILE%" >nul
   if not errorlevel 1 (
     set "CORNELL_TARGET=vkcornell"
   )
