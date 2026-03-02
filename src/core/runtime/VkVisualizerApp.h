@@ -115,6 +115,8 @@ private:
     void createDepthResources();
     void destroyTextureResources();
     void rebuildSceneMesh();
+    void rebuildSceneModeMesh();
+    void rebuildGlobeModeMesh();
     void rebuildGpuMeshBuffers();
     void initSceneSystems();
 

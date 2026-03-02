@@ -775,48 +775,54 @@ void VkVisualizerApp::rebuildSceneMesh() {
     sceneVertices_.clear();
     sceneIndices_.clear();
     sceneDrawItems_.clear();
-
     if (sceneModeEnabled_) {
-        scene_.update(0.0f, 0.0f);
-        sceneGraph_ = scene_.graph();
-        ecs_ = scene_.ecs();
-
-        for (const SceneNodeId nodeId : scene_.objectNodes()) {
-            if (sceneDrawItems_.size() >= kMaxSceneObjects) break;
-            const SceneNode* node = sceneGraph_.find(nodeId);
-            if (!node || !node->visible) continue;
-            auto obj = scene_.object(nodeId);
-            if (!obj) continue;
-
-            std::vector<Vertex> objectVertices;
-            std::vector<uint32_t> objectIndices;
-            obj->buildMesh(objectVertices, objectIndices);
-
-            const uint32_t baseVertex = static_cast<uint32_t>(sceneVertices_.size());
-            const uint32_t firstIndex = static_cast<uint32_t>(sceneIndices_.size());
-            sceneVertices_.insert(sceneVertices_.end(), objectVertices.begin(), objectVertices.end());
-            for (uint32_t idx : objectIndices) {
-                sceneIndices_.push_back(baseVertex + idx);
-            }
-            sceneDrawItems_.push_back(SceneDrawItem{
-                .nodeId = nodeId,
-                .firstIndex = firstIndex,
-                .indexCount = static_cast<uint32_t>(objectIndices.size()),
-                .objectUniformSlot = static_cast<uint32_t>(sceneDrawItems_.size()),
-                .textureSlot = obj->material().textureSlot % kMaxBindlessTextures,
-                .model = node->worldTransform,
-                .primitive = obj->primitive(),
-                .vertShader = obj->shaders().vertexShaderSpv,
-                .fragShader = obj->shaders().fragmentShaderSpv,
-            });
-        }
-        for (const auto& item : sceneDrawItems_) {
-            (void)getOrCreateScenePipeline(item.primitive, item.vertShader, item.fragShader);
-        }
-        sceneIndexCount_ = static_cast<uint32_t>(sceneIndices_.size());
-        return;
+        rebuildSceneModeMesh();
+    } else {
+        rebuildGlobeModeMesh();
     }
+}
 
+void VkVisualizerApp::rebuildSceneModeMesh() {
+    scene_.update(0.0f, 0.0f);
+    sceneGraph_ = scene_.graph();
+    ecs_ = scene_.ecs();
+
+    for (const SceneNodeId nodeId : scene_.objectNodes()) {
+        if (sceneDrawItems_.size() >= kMaxSceneObjects) break;
+        const SceneNode* node = sceneGraph_.find(nodeId);
+        if (!node || !node->visible) continue;
+        auto obj = scene_.object(nodeId);
+        if (!obj) continue;
+
+        std::vector<Vertex> objectVertices;
+        std::vector<uint32_t> objectIndices;
+        obj->buildMesh(objectVertices, objectIndices);
+
+        const uint32_t baseVertex = static_cast<uint32_t>(sceneVertices_.size());
+        const uint32_t firstIndex = static_cast<uint32_t>(sceneIndices_.size());
+        sceneVertices_.insert(sceneVertices_.end(), objectVertices.begin(), objectVertices.end());
+        for (uint32_t idx : objectIndices) {
+            sceneIndices_.push_back(baseVertex + idx);
+        }
+        sceneDrawItems_.push_back(SceneDrawItem{
+            .nodeId = nodeId,
+            .firstIndex = firstIndex,
+            .indexCount = static_cast<uint32_t>(objectIndices.size()),
+            .objectUniformSlot = static_cast<uint32_t>(sceneDrawItems_.size()),
+            .textureSlot = obj->material().textureSlot % kMaxBindlessTextures,
+            .model = node->worldTransform,
+            .primitive = obj->primitive(),
+            .vertShader = obj->shaders().vertexShaderSpv,
+            .fragShader = obj->shaders().fragmentShaderSpv,
+        });
+    }
+    for (const auto& item : sceneDrawItems_) {
+        (void)getOrCreateScenePipeline(item.primitive, item.vertShader, item.fragShader);
+    }
+    sceneIndexCount_ = static_cast<uint32_t>(sceneIndices_.size());
+}
+
+void VkVisualizerApp::rebuildGlobeModeMesh() {
     sceneGraph_.updateWorldTransforms();
     const SceneNode* globeNode = sceneGraph_.find(globeSceneNode_);
     VisibilityComponent* vis = ecs_.visibility(globeEntity_);
