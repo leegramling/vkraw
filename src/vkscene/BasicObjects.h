@@ -14,7 +14,8 @@ public:
     TriangleObject()
         : RenderObject("TriangleObject",
                        PrimitiveType::Triangles,
-                       ShaderSet{"cube.vert.spv", "cube.frag.spv"}) {}
+                       ShaderSet{"cube.vert.spv", "cube.frag.spv"},
+                       Material{.textureSlot = 0, .baseColor = glm::vec4(1.0f)}) {}
 
     void buildMesh(std::vector<core::Vertex>& outVertices,
                    std::vector<uint32_t>& outIndices) const override
@@ -40,7 +41,8 @@ public:
     explicit LineCircleObject(uint32_t segments = 96, float radius = 80.0f)
         : RenderObject("LineCircleObject",
                        PrimitiveType::Lines,
-                       ShaderSet{"cube.vert.spv", "cube.frag.spv"}),
+                       ShaderSet{"cube.vert.spv", "cube.frag.spv"},
+                       Material{.textureSlot = 0, .baseColor = glm::vec4(1.0f)}),
           segments_(segments),
           radius_(radius) {}
 

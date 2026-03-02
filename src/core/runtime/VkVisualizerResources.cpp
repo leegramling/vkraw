@@ -765,7 +765,7 @@ void VkVisualizerApp::rebuildSceneMesh() {
                 .firstIndex = firstIndex,
                 .indexCount = static_cast<uint32_t>(objectIndices.size()),
                 .objectUniformSlot = static_cast<uint32_t>(sceneDrawItems_.size()),
-                .textureSlot = 0,
+                .textureSlot = obj->material().textureSlot % kMaxBindlessTextures,
                 .model = node->worldTransform,
                 .primitive = obj->primitive(),
                 .vertShader = obj->shaders().vertexShaderSpv,
