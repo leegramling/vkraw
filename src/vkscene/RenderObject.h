@@ -1,6 +1,6 @@
 #pragma once
 
-#include "vkraw/CubeRenderTypes.h"
+#include "core/RenderTypes.h"
 
 #include <glm/glm.hpp>
 
@@ -29,7 +29,7 @@ public:
     const ShaderSet& shaders() const { return shaders_; }
     const glm::mat4& modelMatrix() const { return modelMatrix_; }
 
-    virtual void buildMesh(std::vector<vkraw::Vertex>& outVertices,
+    virtual void buildMesh(std::vector<core::Vertex>& outVertices,
                            std::vector<uint32_t>& outIndices) const = 0;
 
     virtual void update(float /*deltaSeconds*/, float /*elapsedSeconds*/) {}
@@ -50,4 +50,3 @@ private:
 using RenderObjectPtr = std::shared_ptr<RenderObject>;
 
 } // namespace vkscene
-

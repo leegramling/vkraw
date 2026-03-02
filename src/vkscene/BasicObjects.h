@@ -16,7 +16,7 @@ public:
                        PrimitiveType::Triangles,
                        ShaderSet{"cube.vert.spv", "cube.frag.spv"}) {}
 
-    void buildMesh(std::vector<vkraw::Vertex>& outVertices,
+    void buildMesh(std::vector<core::Vertex>& outVertices,
                    std::vector<uint32_t>& outIndices) const override
     {
         outVertices = {
@@ -44,7 +44,7 @@ public:
           segments_(segments),
           radius_(radius) {}
 
-    void buildMesh(std::vector<vkraw::Vertex>& outVertices,
+    void buildMesh(std::vector<core::Vertex>& outVertices,
                    std::vector<uint32_t>& outIndices) const override
     {
         const uint32_t seg = segments_ < 3 ? 3 : segments_;

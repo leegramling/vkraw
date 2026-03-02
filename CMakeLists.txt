@@ -197,15 +197,16 @@ if(VKRAW_BUILD_VKCORNELL)
 endif()
 
 set(VKRAW_APP_SOURCES
-    src/vkraw/VkVisualizerLifecycle.cpp
-    src/vkraw/VkVisualizerDevice.cpp
-    src/vkraw/VkVisualizerResources.cpp
-    src/vkraw/VkVisualizerImGui.cpp
-    src/vkraw/VkVisualizerFrame.cpp
-    src/vkraw/setup/SwapchainSetup.cpp
-    src/vkraw/setup/RenderPassSetup.cpp
-    src/vkraw/setup/FramebufferSetup.cpp
-    src/vkraw/setup/PipelineSetup.cpp
+    src/core/AppRunner.cpp
+    src/core/vulkan/SwapchainSetup.cpp
+    src/core/vulkan/RenderPassSetup.cpp
+    src/core/vulkan/FramebufferSetup.cpp
+    src/core/vulkan/PipelineSetup.cpp
+    src/core/runtime/VkVisualizerLifecycle.cpp
+    src/core/runtime/VkVisualizerDevice.cpp
+    src/core/runtime/VkVisualizerResources.cpp
+    src/core/runtime/VkVisualizerImGui.cpp
+    src/core/runtime/VkVisualizerFrame.cpp
 )
 
 add_executable(vkraw

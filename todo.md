@@ -27,6 +27,24 @@ Goal: stop coupling new apps to `src/vkraw/*` directly and move reusable Vulkan/
   - [ ] `core.md` architecture and ownership boundaries
   - [ ] migration checklist for adding new apps (`vkScene`, future apps)
 
+## Documentation TODO (Natural Docs + Mermaid)
+
+Goal: use Natural Docs for code documentation and include Mermaid diagrams in generated HTML documentation.
+
+- [ ] Evaluate and lock Natural Docs version/tooling for this repo.
+- [ ] Add Natural Docs config and build command(s) to the repo.
+- [ ] Define project doc style conventions:
+  - [ ] file/class/function comment templates
+  - [ ] Mermaid block formatting conventions in comments/docs
+  - [ ] naming/placement conventions for architecture diagrams
+- [ ] Validate Mermaid rendering in generated HTML output with at least one sample diagram.
+- [ ] Add CI or local check target to regenerate docs and validate build success.
+- [ ] After `src/core` refactor is complete, add/update documentation comments across all source files.
+- [ ] Add architecture docs with Mermaid diagrams for:
+  - [ ] `src/core` runtime + Vulkan setup flow
+  - [ ] `vkraw` app-specific globe layer
+  - [ ] `vkScene` object/scene/material flow
+
 ## Workflow Rule
 
 - [ ] Always run `git add` and commit after each completed task.
