@@ -33,10 +33,10 @@ Goal: stop coupling new apps to `src/vkraw/*` directly and move reusable Vulkan/
 Goal: use Natural Docs for code documentation and include Mermaid diagrams in generated HTML documentation.
 
 - [ ] Evaluate and lock Natural Docs version/tooling for this repo.
-- [ ] Add Natural Docs config and build command(s) to the repo.
-  - [ ] Add `docs/naturaldocs/` project config
-  - [ ] Add `docs/build_docs.sh` and Windows equivalent
-  - [ ] Add CMake custom target `docs`
+- [x] Add Natural Docs config and build command(s) to the repo.
+  - [x] Add `docs/naturaldocs/` project config
+  - [x] Add `docs/build_docs.sh` and Windows equivalent
+  - [x] Add CMake custom target `docs`
 - [ ] Define project doc style conventions:
   - [ ] file/class/function comment templates
   - [ ] Mermaid block formatting conventions in comments/docs

@@ -163,6 +163,20 @@ add_custom_target(shaders ALL
     DEPENDS ${VKRAW_SHADER_OUTPUTS}
 )
 
+if(WIN32)
+    add_custom_target(docs
+        COMMAND cmd /c "${CMAKE_CURRENT_SOURCE_DIR}/docs/build_docs.bat"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Generating Natural Docs HTML output"
+    )
+else()
+    add_custom_target(docs
+        COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/docs/build_docs.sh"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Generating Natural Docs HTML output"
+    )
+endif()
+
 if(VKRAW_BUILD_VKCORNELL)
     set(VKCORNELL_SHADER_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/vkcornell_shaders)
     file(MAKE_DIRECTORY ${VKCORNELL_SHADER_OUTPUT_DIR})
