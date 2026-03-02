@@ -38,11 +38,11 @@ public:
 
 class LineCircleObject final : public RenderObject {
 public:
-    explicit LineCircleObject(uint32_t segments = 96, float radius = 80.0f)
+    explicit LineCircleObject(uint32_t segments = 96, float radius = 80.0f, uint32_t textureSlot = 0)
         : RenderObject("LineCircleObject",
                        PrimitiveType::Lines,
                        ShaderSet{"cube.vert.spv", "cube.frag.spv"},
-                       Material{.textureSlot = 0, .baseColor = glm::vec4(1.0f)}),
+                       Material{.textureSlot = textureSlot, .baseColor = glm::vec4(1.0f)}),
           segments_(segments),
           radius_(radius) {}
 

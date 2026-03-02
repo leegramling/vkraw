@@ -27,6 +27,7 @@ public:
     void setRunDurationSeconds(float seconds) { runDurationSeconds_ = seconds; }
     void setEarthTexturePath(std::string path) { earthTexturePath_ = std::move(path); }
     void setSceneMode(bool enable) { sceneModeEnabled_ = enable; }
+    uint32_t textureSlot(const std::string& name) const;
 
 private:
     static constexpr uint32_t kWindowWidth = 1280;
@@ -69,6 +70,7 @@ private:
     };
     std::vector<SceneDrawItem> sceneDrawItems_{};
     std::unordered_map<std::string, VkPipeline> scenePipelineCache_{};
+    std::unordered_map<std::string, uint32_t> bindlessTextureSlots_{};
     static std::string makeScenePipelineKey(vkscene::PrimitiveType primitive, const std::string& vertShader, const std::string& fragShader);
     VkPipeline getOrCreateScenePipeline(vkscene::PrimitiveType primitive, const std::string& vertShader, const std::string& fragShader);
 
@@ -99,6 +101,9 @@ private:
     void createIndexBuffer();
     void createUniformBuffer();
     void createTextureResources();
+    VkContext::TextureResource createTextureResource(uint32_t width, uint32_t height, const std::vector<uint8_t>& pixels);
+    uint32_t registerBindlessTexture(const std::string& name, uint32_t width, uint32_t height, const std::vector<uint8_t>& pixels);
+    uint32_t registerBindlessTextureFromFile(const std::string& name, const std::string& path);
     void createDescriptorPool();
     void createDescriptorSet();
     void createCommandBuffers();

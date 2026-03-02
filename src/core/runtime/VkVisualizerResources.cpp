@@ -268,11 +268,145 @@ void VkVisualizerApp::createUniformBuffer() {
                  context_.objectUniformBufferMemory);
 }
 
-void VkVisualizerApp::createTextureResources() {
+uint32_t VkVisualizerApp::textureSlot(const std::string& name) const
+{
+    const auto it = bindlessTextureSlots_.find(name);
+    if (it == bindlessTextureSlots_.end()) return 0;
+    return it->second;
+}
+
+VkContext::TextureResource VkVisualizerApp::createTextureResource(uint32_t width, uint32_t height, const std::vector<uint8_t>& pixels)
+{
+    VkContext::TextureResource out{};
+    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(pixels.size());
+
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+    createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 stagingBuffer, stagingMemory);
+    uploadToMemory(stagingMemory, pixels.data(), imageSize);
+
+    createImage(width, height, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, out.image, out.memory);
+
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+
+    VkImageMemoryBarrier toTransferBarrier{};
+    toTransferBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toTransferBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    toTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toTransferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransferBarrier.image = out.image;
+    toTransferBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    toTransferBarrier.subresourceRange.baseMipLevel = 0;
+    toTransferBarrier.subresourceRange.levelCount = 1;
+    toTransferBarrier.subresourceRange.baseArrayLayer = 0;
+    toTransferBarrier.subresourceRange.layerCount = 1;
+    toTransferBarrier.srcAccessMask = 0;
+    toTransferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                         &toTransferBarrier);
+
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {width, height, 1};
+    vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, out.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    VkImageMemoryBarrier toShaderReadBarrier{};
+    toShaderReadBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toShaderReadBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toShaderReadBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    toShaderReadBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toShaderReadBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toShaderReadBarrier.image = out.image;
+    toShaderReadBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    toShaderReadBarrier.subresourceRange.baseMipLevel = 0;
+    toShaderReadBarrier.subresourceRange.levelCount = 1;
+    toShaderReadBarrier.subresourceRange.baseArrayLayer = 0;
+    toShaderReadBarrier.subresourceRange.layerCount = 1;
+    toShaderReadBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    toShaderReadBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                         &toShaderReadBarrier);
+
+    endSingleTimeCommands(commandBuffer);
+
+    vkDestroyBuffer(context_.device.device, stagingBuffer, nullptr);
+    vkFreeMemory(context_.device.device, stagingMemory, nullptr);
+
+    out.view = createImageView(out.image, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.anisotropyEnable = VK_FALSE;
+    samplerInfo.maxAnisotropy = 1.0f;
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
+    if (vkCreateSampler(context_.device.device, &samplerInfo, nullptr, &out.sampler) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create texture sampler");
+    }
+    return out;
+}
+
+uint32_t VkVisualizerApp::registerBindlessTexture(const std::string& name, uint32_t width, uint32_t height, const std::vector<uint8_t>& pixels)
+{
+    const auto existing = bindlessTextureSlots_.find(name);
+    if (existing != bindlessTextureSlots_.end()) return existing->second;
+    if (context_.bindlessTextures.size() >= kMaxBindlessTextures) return kMaxBindlessTextures;
+
+    const uint32_t slot = static_cast<uint32_t>(context_.bindlessTextures.size());
+    context_.bindlessTextures.push_back(createTextureResource(width, height, pixels));
+    bindlessTextureSlots_[name] = slot;
+    return slot;
+}
+
+uint32_t VkVisualizerApp::registerBindlessTextureFromFile(const std::string& name, const std::string& path)
+{
     LoadedImage image{};
-    textureLoadedFromFile_ = loadTextureFromFile(earthTexturePath_, image);
+    if (!loadTextureFromFile(path, image)) return kMaxBindlessTextures;
+
+    VkPhysicalDeviceProperties props{};
+    vkGetPhysicalDeviceProperties(context_.physicalDevice.physical_device, &props);
+    if (image.width > props.limits.maxImageDimension2D || image.height > props.limits.maxImageDimension2D) {
+        const float scaleW = static_cast<float>(props.limits.maxImageDimension2D) / static_cast<float>(image.width);
+        const float scaleH = static_cast<float>(props.limits.maxImageDimension2D) / static_cast<float>(image.height);
+        const float scale = std::min(scaleW, scaleH);
+        const uint32_t newWidth = std::max(1U, static_cast<uint32_t>(std::floor(image.width * scale)));
+        const uint32_t newHeight = std::max(1U, static_cast<uint32_t>(std::floor(image.height * scale)));
+        image = resizeRgbaNearest(image, newWidth, newHeight);
+    }
+    return registerBindlessTexture(name, image.width, image.height, image.pixels);
+}
+
+void VkVisualizerApp::createTextureResources() {
+    context_.bindlessTextures.clear();
+    bindlessTextureSlots_.clear();
+    textureLoadedFromFile_ = false;
+
     textureSourceLabel_ = "procedural";
-    if (!textureLoadedFromFile_) {
+    uint32_t earthSlot = kMaxBindlessTextures;
+    if (!earthTexturePath_.empty()) {
+        earthSlot = registerBindlessTextureFromFile("earth", earthTexturePath_);
+        textureLoadedFromFile_ = (earthSlot != kMaxBindlessTextures);
+    }
+    if (earthSlot == kMaxBindlessTextures) {
         if (!earthTexturePath_.empty()) {
             std::cerr << "Failed to load earth texture at '" << earthTexturePath_
                       << "' (supported formats: .jpg/.jpeg/.png"
@@ -286,132 +420,16 @@ void VkVisualizerApp::createTextureResources() {
         }
         constexpr uint32_t kTextureWidth = 1024;
         constexpr uint32_t kTextureHeight = 512;
-        image.width = kTextureWidth;
-        image.height = kTextureHeight;
-        image.pixels = makeProceduralEarthTexture(kTextureWidth, kTextureHeight);
+        const std::vector<uint8_t> pixels = makeProceduralEarthTexture(kTextureWidth, kTextureHeight);
+        earthSlot = registerBindlessTexture("earth", kTextureWidth, kTextureHeight, pixels);
     } else {
-        textureSourceLabel_ = "file";
-        if (!earthTexturePath_.empty()) {
-            textureSourceLabel_ += ":" + earthTexturePath_;
-        }
+        textureSourceLabel_ = "file:" + earthTexturePath_;
     }
+    (void)earthSlot;
 
-    VkPhysicalDeviceProperties props{};
-    vkGetPhysicalDeviceProperties(context_.physicalDevice.physical_device, &props);
-    if (image.width > props.limits.maxImageDimension2D || image.height > props.limits.maxImageDimension2D) {
-        const float scaleW = static_cast<float>(props.limits.maxImageDimension2D) / static_cast<float>(image.width);
-        const float scaleH = static_cast<float>(props.limits.maxImageDimension2D) / static_cast<float>(image.height);
-        const float scale = std::min(scaleW, scaleH);
-        const uint32_t newWidth = std::max(1U, static_cast<uint32_t>(std::floor(image.width * scale)));
-        const uint32_t newHeight = std::max(1U, static_cast<uint32_t>(std::floor(image.height * scale)));
-        std::cerr << "Earth texture '" << (earthTexturePath_.empty() ? "<procedural>" : earthTexturePath_) << "' exceeds GPU max dimension "
-                  << props.limits.maxImageDimension2D << ", downscaling " << image.width << "x" << image.height << " -> " << newWidth << "x"
-                  << newHeight << ".\n";
-        image = resizeRgbaNearest(image, newWidth, newHeight);
-        if (textureLoadedFromFile_) {
-            textureSourceLabel_ += "(downscaled)";
-        } else {
-            textureSourceLabel_ = "procedural(downscaled)";
-        }
-    }
-    auto createTexture = [&](const LoadedImage& src) -> VkContext::TextureResource {
-        VkContext::TextureResource out{};
-        const VkDeviceSize imageSize = static_cast<VkDeviceSize>(src.pixels.size());
-
-        VkBuffer stagingBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
-        createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                     stagingBuffer, stagingMemory);
-        uploadToMemory(stagingMemory, src.pixels.data(), imageSize);
-
-        createImage(src.width, src.height, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL,
-                    VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, out.image, out.memory);
-
-        VkCommandBuffer commandBuffer = beginSingleTimeCommands();
-
-        VkImageMemoryBarrier toTransferBarrier{};
-        toTransferBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        toTransferBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        toTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        toTransferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        toTransferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        toTransferBarrier.image = out.image;
-        toTransferBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        toTransferBarrier.subresourceRange.baseMipLevel = 0;
-        toTransferBarrier.subresourceRange.levelCount = 1;
-        toTransferBarrier.subresourceRange.baseArrayLayer = 0;
-        toTransferBarrier.subresourceRange.layerCount = 1;
-        toTransferBarrier.srcAccessMask = 0;
-        toTransferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1,
-                             &toTransferBarrier);
-
-        VkBufferImageCopy region{};
-        region.bufferOffset = 0;
-        region.bufferRowLength = 0;
-        region.bufferImageHeight = 0;
-        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        region.imageSubresource.mipLevel = 0;
-        region.imageSubresource.baseArrayLayer = 0;
-        region.imageSubresource.layerCount = 1;
-        region.imageOffset = {0, 0, 0};
-        region.imageExtent = {src.width, src.height, 1};
-        vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, out.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-        VkImageMemoryBarrier toShaderReadBarrier{};
-        toShaderReadBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        toShaderReadBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        toShaderReadBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        toShaderReadBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        toShaderReadBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        toShaderReadBarrier.image = out.image;
-        toShaderReadBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        toShaderReadBarrier.subresourceRange.baseMipLevel = 0;
-        toShaderReadBarrier.subresourceRange.levelCount = 1;
-        toShaderReadBarrier.subresourceRange.baseArrayLayer = 0;
-        toShaderReadBarrier.subresourceRange.layerCount = 1;
-        toShaderReadBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        toShaderReadBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr,
-                             1, &toShaderReadBarrier);
-
-        endSingleTimeCommands(commandBuffer);
-
-        vkDestroyBuffer(context_.device.device, stagingBuffer, nullptr);
-        vkFreeMemory(context_.device.device, stagingMemory, nullptr);
-
-        out.view = createImageView(out.image, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
-
-        VkSamplerCreateInfo samplerInfo{};
-        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        samplerInfo.magFilter = VK_FILTER_LINEAR;
-        samplerInfo.minFilter = VK_FILTER_LINEAR;
-        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.anisotropyEnable = VK_FALSE;
-        samplerInfo.maxAnisotropy = 1.0f;
-        samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-        samplerInfo.unnormalizedCoordinates = VK_FALSE;
-        samplerInfo.compareEnable = VK_FALSE;
-        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        samplerInfo.minLod = 0.0f;
-        samplerInfo.maxLod = 0.0f;
-        if (vkCreateSampler(context_.device.device, &samplerInfo, nullptr, &out.sampler) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create texture sampler");
-        }
-        return out;
-    };
-
-    context_.bindlessTextures.clear();
-    context_.bindlessTextures.push_back(createTexture(image)); // slot 0: earth
-
-    LoadedImage checker{};
-    checker.width = 512;
-    checker.height = 512;
-    checker.pixels = makeCheckerTexture(checker.width, checker.height);
-    context_.bindlessTextures.push_back(createTexture(checker)); // slot 1: checker
-
+    constexpr uint32_t kCheckerSize = 512;
+    const std::vector<uint8_t> checkerPixels = makeCheckerTexture(kCheckerSize, kCheckerSize);
+    (void)registerBindlessTexture("checker", kCheckerSize, kCheckerSize, checkerPixels);
     textureSourceLabel_ += " +checker";
 }
 
@@ -752,7 +770,7 @@ void VkVisualizerApp::initSceneSystems()
 {
     if (sceneModeEnabled_) {
         scene_.addObject(std::make_shared<vkscene::TriangleObject>(), "SceneTriangle", scene_.rootNode());
-        scene_.addObject(std::make_shared<vkscene::LineCircleObject>(128, 95.0f), "SceneLineCircle", scene_.rootNode());
+        scene_.addObject(std::make_shared<vkscene::LineCircleObject>(128, 95.0f, textureSlot("checker")), "SceneLineCircle", scene_.rootNode());
         scene_.update(0.0f, 0.0f);
         return;
     }
