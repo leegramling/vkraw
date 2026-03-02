@@ -1,6 +1,6 @@
 #include "core/runtime/VkVisualizerApp.h"
 
-#include "vkraw/CubeRenderTypes.h"
+#include "core/RenderTypes.h"
 #include "core/features/globe/GlobeControls.h"
 
 #include <backends/imgui_impl_glfw.h>

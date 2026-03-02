@@ -1,6 +1,6 @@
 #pragma once
 
-#include "vkraw/GlobeObject.h"
+#include "core/features/globe/GlobeObject.h"
 
 #include <imgui.h>
 

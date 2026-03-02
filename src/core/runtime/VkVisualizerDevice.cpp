@@ -1,6 +1,6 @@
 #include "core/runtime/VkVisualizerApp.h"
 
-#include "vkraw/CubeRenderTypes.h"
+#include "core/RenderTypes.h"
 #include "core/vulkan/FramebufferSetup.h"
 #include "core/vulkan/PipelineSetup.h"
 #include "core/vulkan/RenderPassSetup.h"

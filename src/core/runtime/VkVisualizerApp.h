@@ -1,10 +1,10 @@
 #pragma once
 
-#include "vkraw/CubeRenderTypes.h"
-#include "vkraw/EcsWorld.h"
+#include "core/RenderTypes.h"
+#include "core/EcsWorld.h"
 #include "core/features/globe/GlobeObject.h"
 #include "core/features/globe/GlobeControls.h"
-#include "vkraw/SceneGraph.h"
+#include "core/SceneGraph.h"
 #include "core/runtime/UIObject.h"
 #include "core/runtime/VkContext.h"
 #include "vkscene/Scene.h"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "vkraw/CubeRenderTypes.h"
+#include "core/RenderTypes.h"
 
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>

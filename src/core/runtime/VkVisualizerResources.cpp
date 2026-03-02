@@ -1,6 +1,6 @@
 #include "core/runtime/VkVisualizerApp.h"
 
-#include "vkraw/CubeRenderTypes.h"
+#include "core/RenderTypes.h"
 #include "vkscene/BasicObjects.h"
 
 #if __has_include(<stb_image.h>)
