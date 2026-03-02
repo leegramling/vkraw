@@ -13,3 +13,9 @@
 [submodule "external/Vulkan-Headers"]
 	path = external/Vulkan-Headers
 	url = https://github.com/KhronosGroup/Vulkan-Headers.git
+[submodule "The-Modern-Vulkan-Cookbook"]
+	path = The-Modern-Vulkan-Cookbook
+	url = https://github.com/PacktPublishing/The-Modern-Vulkan-Cookbook.git
+[submodule "lightweightvk"]
+	path = lightweightvk
+	url = https://github.com/corporateshark/lightweightvk.git

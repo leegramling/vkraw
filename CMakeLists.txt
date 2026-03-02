@@ -16,6 +16,8 @@ if(WIN32)
     add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
+option(VKRAW_BUILD_VKCORNELL "Build vkcornell app using copied vulkancore/enginecore under src/" ON)
+
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -27,6 +29,33 @@ add_subdirectory(external/glfw)
 add_subdirectory(external/glm)
 
 find_package(Vulkan REQUIRED)
+
+if(VKRAW_BUILD_VKCORNELL)
+    include(FetchContent)
+    set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
+
+    FetchContent_Declare(
+        volk
+        GIT_REPOSITORY https://github.com/zeux/volk.git
+        GIT_TAG 1.3.270
+    )
+    FetchContent_Declare(
+        vma
+        GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+        GIT_TAG v3.0.1
+    )
+    FetchContent_Declare(
+        tracy
+        GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+        GIT_TAG v0.9.1
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_Declare(
+        stb
+        GIT_REPOSITORY https://github.com/nothings/stb.git
+    )
+    FetchContent_MakeAvailable(volk vma tracy stb)
+endif()
 
 set(_VKRAW_USE_SYSTEM_IMAGE_LIBS_DEFAULT ON)
 if(WIN32)
@@ -134,6 +163,39 @@ add_custom_target(shaders ALL
     DEPENDS ${VKRAW_SHADER_OUTPUTS}
 )
 
+if(VKRAW_BUILD_VKCORNELL)
+    set(VKCORNELL_SHADER_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/vkcornell_shaders)
+    file(MAKE_DIRECTORY ${VKCORNELL_SHADER_OUTPUT_DIR})
+    set(VKCORNELL_SHADER_SOURCES
+        cornell.vert
+        cornell.frag
+    )
+    set(VKCORNELL_SHADER_OUTPUTS "")
+    foreach(shader_src ${VKCORNELL_SHADER_SOURCES})
+        set(shader_in ${CMAKE_CURRENT_SOURCE_DIR}/src/vkcornell/resources/shaders/${shader_src})
+        set(shader_out ${VKCORNELL_SHADER_OUTPUT_DIR}/${shader_src}.spv)
+        list(APPEND VKCORNELL_SHADER_OUTPUTS ${shader_out})
+
+        if(VK_SHADER_COMPILER)
+            add_custom_command(
+                OUTPUT ${shader_out}
+                COMMAND ${VK_SHADER_COMPILER} ${VK_SHADER_ARGS} ${shader_in} -o ${shader_out}
+                DEPENDS ${shader_in}
+                VERBATIM
+            )
+        else()
+            add_custom_command(
+                OUTPUT ${shader_out}
+                COMMAND ${CMAKE_COMMAND} -E touch ${shader_out}
+                DEPENDS ${shader_in}
+                VERBATIM
+            )
+        endif()
+    endforeach()
+
+    add_custom_target(vkcornell_shaders ALL DEPENDS ${VKCORNELL_SHADER_OUTPUTS})
+endif()
+
 add_executable(vkraw
     src/vkraw/main.cpp
     src/vkraw/VkVisualizerLifecycle.cpp
@@ -225,4 +287,62 @@ if(VKRAW_BUILD_VKVSG)
     target_compile_definitions(vkglobe PRIVATE VKVSG_EXAMPLES_DIR="${VSG_DEPS_INSTALL_DIR}/share/vsgExamples")
     target_compile_definitions(vkglobe PRIVATE VKVSG_SHADER_DIR="${SHADER_OUTPUT_DIR}")
     add_dependencies(vkglobe shaders)
+endif()
+
+if(VKRAW_BUILD_VKCORNELL)
+    add_library(vulkancore STATIC
+        src/vulkancore/Buffer.cpp
+        src/vulkancore/CommandQueueManager.cpp
+        src/vulkancore/Common.cpp
+        src/vulkancore/Context.cpp
+        src/vulkancore/DynamicRendering.cpp
+        src/vulkancore/Framebuffer.cpp
+        src/vulkancore/PhysicalDevice.cpp
+        src/vulkancore/Pipeline.cpp
+        src/vulkancore/RenderPass.cpp
+        src/vulkancore/Sampler.cpp
+        src/vulkancore/ShaderModule.cpp
+        src/vulkancore/Swapchain.cpp
+        src/vulkancore/Texture.cpp
+        src/vulkancore/Utility.cpp
+        src/vulkancore/vma.cpp
+    )
+    target_include_directories(vulkancore PUBLIC
+        src
+        external/glfw/include
+        ${vma_SOURCE_DIR}/include
+    )
+    target_link_libraries(vulkancore PUBLIC
+        Vulkan::Vulkan
+        volk
+        TracyClient
+    )
+
+    add_library(enginecore STATIC
+        src/enginecore/Camera.cpp
+        src/enginecore/Model.cpp
+    )
+    target_include_directories(enginecore PUBLIC
+        src
+        external/glfw/deps
+        ${stb_SOURCE_DIR}
+    )
+    target_link_libraries(enginecore PUBLIC
+        vulkancore
+        glm::glm
+    )
+
+    add_executable(vkcornell_vc
+        src/vkcornell/main.cpp
+    )
+    target_include_directories(vkcornell_vc PRIVATE src)
+    target_link_libraries(vkcornell_vc PRIVATE
+        vulkancore
+        enginecore
+        glfw
+        glm::glm
+        Vulkan::Vulkan
+    )
+    target_compile_definitions(vkcornell_vc PRIVATE VKCORNELL_SHADER_DIR="${VKCORNELL_SHADER_OUTPUT_DIR}")
+    add_dependencies(vkcornell_vc vkcornell_shaders)
 endif()
