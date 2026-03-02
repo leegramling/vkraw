@@ -37,12 +37,13 @@ Goal: use Natural Docs for code documentation and include Mermaid diagrams in ge
   - [x] Add `docs/naturaldocs/` project config
   - [x] Add `docs/build_docs.sh` and Windows equivalent
   - [x] Add CMake custom target `docs`
-- [ ] Define project doc style conventions:
-  - [ ] file/class/function comment templates
-  - [ ] Mermaid block formatting conventions in comments/docs
-  - [ ] naming/placement conventions for architecture diagrams
+- [x] Define project doc style conventions:
+  - [x] file/class/function comment templates
+  - [x] Mermaid block formatting conventions in comments/docs
+  - [x] naming/placement conventions for architecture diagrams
 - [ ] Validate Mermaid rendering in generated HTML output with at least one sample diagram.
-  - [ ] Add one embedded Mermaid block in a C++ file comment and verify output
+  - [x] Add one embedded Mermaid block in a C++ file comment
+  - [ ] Verify output
 - [ ] Add CI or local check target to regenerate docs and validate build success.
 - [ ] After `src/core` refactor is complete, add/update documentation comments across all source files.
 - [ ] Add architecture docs with Mermaid diagrams for:

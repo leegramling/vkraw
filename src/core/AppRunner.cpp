@@ -7,6 +7,17 @@
 #include <stdexcept>
 #include <string>
 
+/*
+Main app entry flow (runtime handoff):
+
+```mermaid
+flowchart TD
+    A[main.cpp] --> B[core::runVisualizerApp]
+    B --> C[core::runtime::VkVisualizerApp]
+    C --> D[run]
+```
+*/
+
 namespace core {
 
 namespace {
