@@ -6,8 +6,8 @@
 
 namespace core::vulkan {
 
-void createDescriptorSetLayout(vkraw::VkContext& context);
-void createGraphicsPipeline(vkraw::VkContext& context, const std::vector<char>& vertShaderCode, const std::vector<char>& fragShaderCode,
+void createDescriptorSetLayout(core::runtime::VkContext& context);
+void createGraphicsPipeline(core::runtime::VkContext& context, const std::vector<char>& vertShaderCode, const std::vector<char>& fragShaderCode,
                             size_t pushConstantSize, VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                             VkPipeline* outPipeline = nullptr, bool createPipelineLayout = true);
 

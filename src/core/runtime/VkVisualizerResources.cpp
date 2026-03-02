@@ -29,7 +29,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace vkraw {
+namespace core::runtime {
 
 namespace {
 
@@ -236,6 +236,18 @@ void VkVisualizerApp::createIndexBuffer() {
 void VkVisualizerApp::createUniformBuffer() {
     createBuffer(sizeof(UniformBufferObject), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, context_.uniformBuffer, context_.uniformBufferMemory);
+
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(context_.physicalDevice.physical_device, &properties);
+    const VkDeviceSize minAlign = properties.limits.minUniformBufferOffsetAlignment;
+    const VkDeviceSize objectSize = sizeof(core::ObjectUniformData);
+    const VkDeviceSize alignedSize = (minAlign > 0) ? ((objectSize + minAlign - 1) & ~(minAlign - 1)) : objectSize;
+    context_.objectUniformStride = alignedSize;
+    context_.objectUniformCapacity = kMaxSceneObjects;
+
+    createBuffer(context_.objectUniformStride * context_.objectUniformCapacity, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, context_.objectUniformBuffer,
+                 context_.objectUniformBufferMemory);
 }
 
 void VkVisualizerApp::createTextureResources() {
@@ -375,11 +387,13 @@ void VkVisualizerApp::createTextureResources() {
 }
 
 void VkVisualizerApp::createDescriptorPool() {
-    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+    std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = 1;
-    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     poolSizes[1].descriptorCount = 1;
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[2].descriptorCount = kMaxBindlessTextures;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -408,28 +422,44 @@ void VkVisualizerApp::createDescriptorSet() {
     bufferInfo.offset = 0;
     bufferInfo.range = sizeof(UniformBufferObject);
 
-    VkWriteDescriptorSet descriptorWrite{};
-    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = context_.descriptorSet;
-    descriptorWrite.dstBinding = 0;
-    descriptorWrite.descriptorCount = 1;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorWrite.pBufferInfo = &bufferInfo;
+    VkWriteDescriptorSet globalUboWrite{};
+    globalUboWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    globalUboWrite.dstSet = context_.descriptorSet;
+    globalUboWrite.dstBinding = 0;
+    globalUboWrite.descriptorCount = 1;
+    globalUboWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    globalUboWrite.pBufferInfo = &bufferInfo;
+
+    VkDescriptorBufferInfo objectBufferInfo{};
+    objectBufferInfo.buffer = context_.objectUniformBuffer;
+    objectBufferInfo.offset = 0;
+    objectBufferInfo.range = sizeof(core::ObjectUniformData);
+
+    VkWriteDescriptorSet objectUboWrite{};
+    objectUboWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    objectUboWrite.dstSet = context_.descriptorSet;
+    objectUboWrite.dstBinding = 1;
+    objectUboWrite.descriptorCount = 1;
+    objectUboWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+    objectUboWrite.pBufferInfo = &objectBufferInfo;
 
     VkDescriptorImageInfo imageInfo{};
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     imageInfo.imageView = context_.earthTextureView;
     imageInfo.sampler = context_.earthTextureSampler;
 
+    std::array<VkDescriptorImageInfo, kMaxBindlessTextures> imageInfos{};
+    imageInfos.fill(imageInfo);
+
     VkWriteDescriptorSet textureWrite{};
     textureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     textureWrite.dstSet = context_.descriptorSet;
-    textureWrite.dstBinding = 1;
-    textureWrite.descriptorCount = 1;
+    textureWrite.dstBinding = 2;
+    textureWrite.descriptorCount = static_cast<uint32_t>(imageInfos.size());
     textureWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    textureWrite.pImageInfo = &imageInfo;
+    textureWrite.pImageInfo = imageInfos.data();
 
-    const std::array<VkWriteDescriptorSet, 2> writes{descriptorWrite, textureWrite};
+    const std::array<VkWriteDescriptorSet, 3> writes{globalUboWrite, objectUboWrite, textureWrite};
     vkUpdateDescriptorSets(context_.device.device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
@@ -714,6 +744,7 @@ void VkVisualizerApp::rebuildSceneMesh() {
         ecs_ = scene_.ecs();
 
         for (const SceneNodeId nodeId : scene_.objectNodes()) {
+            if (sceneDrawItems_.size() >= kMaxSceneObjects) break;
             const SceneNode* node = sceneGraph_.find(nodeId);
             if (!node || !node->visible) continue;
             auto obj = scene_.object(nodeId);
@@ -733,6 +764,8 @@ void VkVisualizerApp::rebuildSceneMesh() {
                 .nodeId = nodeId,
                 .firstIndex = firstIndex,
                 .indexCount = static_cast<uint32_t>(objectIndices.size()),
+                .objectUniformSlot = static_cast<uint32_t>(sceneDrawItems_.size()),
+                .textureSlot = 0,
                 .model = node->worldTransform,
                 .primitive = obj->primitive(),
                 .vertShader = obj->shaders().vertexShaderSpv,
@@ -791,4 +824,4 @@ void VkVisualizerApp::rebuildGpuMeshBuffers() {
     createIndexBuffer();
 }
 
-} // namespace vkraw
+} // namespace core::runtime

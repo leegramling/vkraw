@@ -2,7 +2,7 @@
 
 #include <imgui.h>
 
-namespace vkraw {
+namespace core::runtime {
 
 class UIObject {
 public:
@@ -49,4 +49,4 @@ public:
     }
 };
 
-} // namespace vkraw
+} // namespace core::runtime

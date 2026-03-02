@@ -7,7 +7,7 @@
 #include <array>
 #include <stdexcept>
 
-namespace vkraw {
+namespace core::runtime {
 
 void VkVisualizerApp::initImGui() {
     VkDescriptorPoolSize poolSizes[] = {
@@ -63,4 +63,4 @@ void VkVisualizerApp::initImGui() {
     }
 }
 
-} // namespace vkraw
+} // namespace core::runtime

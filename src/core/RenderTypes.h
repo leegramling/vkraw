@@ -45,9 +45,16 @@ struct UniformBufferObject {
     glm::mat4 viewProj;
 };
 
-struct PushConstantData {
+struct ObjectUniformData {
     glm::mat4 model;
+    glm::uvec4 material;
+};
+
+struct PushConstantData {
+    alignas(16) uint32_t objectIndex = 0;
+    uint32_t _pad0 = 0;
+    uint32_t _pad1 = 0;
+    uint32_t _pad2 = 0;
 };
 
 } // namespace core
-

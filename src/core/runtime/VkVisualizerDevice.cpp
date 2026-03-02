@@ -11,7 +11,7 @@
 #include <string>
 #include <stdexcept>
 
-namespace vkraw {
+namespace core::runtime {
 
 std::string VkVisualizerApp::makeScenePipelineKey(vkscene::PrimitiveType primitive, const std::string& vertShader, const std::string& fragShader)
 {
@@ -29,7 +29,7 @@ VkPipeline VkVisualizerApp::getOrCreateScenePipeline(vkscene::PrimitiveType prim
     const auto fragShaderCode = readShaderFile(fragShader);
     VkPipeline pipeline = VK_NULL_HANDLE;
     const VkPrimitiveTopology topology = (primitive == vkscene::PrimitiveType::Lines) ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    core::vulkan::createGraphicsPipeline(context_, vertShaderCode, fragShaderCode, sizeof(PushConstantData), topology, &pipeline, false);
+    core::vulkan::createGraphicsPipeline(context_, vertShaderCode, fragShaderCode, 0, topology, &pipeline, false);
     scenePipelineCache_.emplace(key, pipeline);
     return pipeline;
 }
@@ -101,7 +101,7 @@ void VkVisualizerApp::createDescriptorSetLayout() {
 void VkVisualizerApp::createGraphicsPipeline() {
     const auto vertShaderCode = readShaderFile("cube.vert.spv");
     const auto fragShaderCode = readShaderFile("cube.frag.spv");
-    core::vulkan::createGraphicsPipeline(context_, vertShaderCode, fragShaderCode, sizeof(PushConstantData), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    core::vulkan::createGraphicsPipeline(context_, vertShaderCode, fragShaderCode, 0, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                          &context_.pipeline, true);
     scenePipelineCache_.clear();
 }
@@ -121,4 +121,4 @@ void VkVisualizerApp::createCommandPool() {
     }
 }
 
-} // namespace vkraw
+} // namespace core::runtime

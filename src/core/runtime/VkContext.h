@@ -7,7 +7,7 @@
 #include <GLFW/glfw3.h>
 #include <VkBootstrap.h>
 
-namespace vkraw {
+namespace core::runtime {
 
 constexpr int kMaxFramesInFlight = 1;
 
@@ -50,6 +50,10 @@ struct VkContext {
     VkDeviceMemory indexBufferMemory = VK_NULL_HANDLE;
     VkBuffer uniformBuffer = VK_NULL_HANDLE;
     VkDeviceMemory uniformBufferMemory = VK_NULL_HANDLE;
+    VkBuffer objectUniformBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory objectUniformBufferMemory = VK_NULL_HANDLE;
+    VkDeviceSize objectUniformStride = 0;
+    uint32_t objectUniformCapacity = 0;
 
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
@@ -70,4 +74,4 @@ struct VkContext {
     std::array<bool, kMaxFramesInFlight> gpuQueryValid{};
 };
 
-} // namespace vkraw
+} // namespace core::runtime

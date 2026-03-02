@@ -1,18 +1,19 @@
 #include "core/runtime/VkVisualizerApp.h"
 
 #include "vkraw/CubeRenderTypes.h"
-#include "vkraw/GlobeControls.h"
+#include "core/features/globe/GlobeControls.h"
 
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_vulkan.h>
 #include <imgui.h>
 
 #include <array>
+#include <cstring>
 #include <stdexcept>
 
 #include <glm/gtc/matrix_transform.hpp>
 
-namespace vkraw {
+namespace core::runtime {
 
 void VkVisualizerApp::processInput(float deltaSeconds) {
     if (!sceneModeEnabled_) {
@@ -32,6 +33,31 @@ void VkVisualizerApp::updateUniformBuffer() {
     uploadToMemory(context_.uniformBufferMemory, &ubo, sizeof(ubo));
 }
 
+void VkVisualizerApp::updateObjectUniformBuffer(float elapsedSeconds)
+{
+    std::vector<core::ObjectUniformData> objects;
+    if (!sceneModeEnabled_) {
+        objects.push_back(core::ObjectUniformData{.model = computeBaseRotation(elapsedSeconds), .material = glm::uvec4(0, 0, 0, 0)});
+    } else {
+        objects.reserve(sceneDrawItems_.size());
+        for (const auto& item : sceneDrawItems_) {
+            objects.push_back(core::ObjectUniformData{.model = item.model, .material = glm::uvec4(item.textureSlot, 0, 0, 0)});
+        }
+    }
+
+    if (objects.empty()) return;
+    const size_t maxObjects = static_cast<size_t>(context_.objectUniformCapacity);
+    if (objects.size() > maxObjects) {
+        objects.resize(maxObjects);
+    }
+
+    std::vector<uint8_t> packed(static_cast<size_t>(context_.objectUniformStride) * objects.size(), 0);
+    for (size_t i = 0; i < objects.size(); ++i) {
+        std::memcpy(packed.data() + i * static_cast<size_t>(context_.objectUniformStride), &objects[i], sizeof(core::ObjectUniformData));
+    }
+    uploadToMemory(context_.objectUniformBufferMemory, packed.data(), packed.size());
+}
+
 glm::mat4 VkVisualizerApp::computeBaseRotation(float elapsedSeconds) const {
     if (sceneModeEnabled_) {
         return glm::mat4(1.0f);
@@ -40,6 +66,7 @@ glm::mat4 VkVisualizerApp::computeBaseRotation(float elapsedSeconds) const {
 }
 
 void VkVisualizerApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, float elapsedSeconds, size_t frameIndex) {
+    (void)elapsedSeconds;
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
@@ -74,12 +101,9 @@ void VkVisualizerApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffer, context_.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, context_.pipelineLayout, 0, 1, &context_.descriptorSet, 0, nullptr);
-
-    const glm::mat4 baseRotation = computeBaseRotation(elapsedSeconds);
-    PushConstantData push{};
-    push.model = baseRotation;
-    vkCmdPushConstants(commandBuffer, context_.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstantData), &push);
+    const uint32_t globeDynamicOffset = 0;
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, context_.pipelineLayout, 0, 1, &context_.descriptorSet, 1,
+                            &globeDynamicOffset);
     if (!sceneModeEnabled_) {
         if (sceneIndexCount_ > 0) {
             vkCmdDrawIndexed(commandBuffer, sceneIndexCount_, 1, 0, 0, 0);
@@ -92,10 +116,9 @@ void VkVisualizerApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_
             VkPipeline objectPipeline = it->second;
 
             vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, objectPipeline);
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, context_.pipelineLayout, 0, 1, &context_.descriptorSet, 0, nullptr);
-            PushConstantData objectPush{};
-            objectPush.model = item.model;
-            vkCmdPushConstants(commandBuffer, context_.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstantData), &objectPush);
+            const uint32_t dynamicOffset = static_cast<uint32_t>(item.objectUniformSlot * context_.objectUniformStride);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, context_.pipelineLayout, 0, 1, &context_.descriptorSet, 1,
+                                    &dynamicOffset);
             vkCmdDrawIndexed(commandBuffer, item.indexCount, 1, item.firstIndex, 0, 0);
         }
     }
@@ -172,7 +195,7 @@ void VkVisualizerApp::drawFrame(float deltaSeconds, float elapsedSeconds) {
     requestExit_ = false;
     bool geometryChanged = false;
     if (!sceneModeEnabled_) {
-        geometryChanged = vkraw::drawGlobeControlsPanel(globe_);
+        geometryChanged = core::features::globe::drawGlobeControlsPanel(globe_);
     }
     if (ui_.draw(presentModeToString(context_.selectedPresentMode), context_.gpuTimestampQueryPool != VK_NULL_HANDLE, sceneGraph_.nodeCount(),
                  sceneGraph_.visibleNodeCount(), ecs_.entityCount(), ecs_.visibleCount(), sceneModeEnabled_, requestExit_) ||
@@ -186,6 +209,7 @@ void VkVisualizerApp::drawFrame(float deltaSeconds, float elapsedSeconds) {
     ImGui::Render();
 
     updateUniformBuffer();
+    updateObjectUniformBuffer(elapsedSeconds);
     recordCommandBuffer(context_.commandBuffers[imageIndex], imageIndex, elapsedSeconds, context_.currentFrame);
     context_.gpuQueryValid[context_.currentFrame] = (context_.gpuTimestampQueryPool != VK_NULL_HANDLE);
 
@@ -227,4 +251,4 @@ void VkVisualizerApp::drawFrame(float deltaSeconds, float elapsedSeconds) {
     context_.currentFrame = (context_.currentFrame + 1) % kMaxFramesInFlight;
 }
 
-} // namespace vkraw
+} // namespace core::runtime

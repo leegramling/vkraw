@@ -4,6 +4,6 @@
 
 namespace core::vulkan {
 
-void createRenderPass(vkraw::VkContext& context, VkFormat depthFormat);
+void createRenderPass(core::runtime::VkContext& context, VkFormat depthFormat);
 
 } // namespace core::vulkan

@@ -4,6 +4,6 @@
 
 namespace core::vulkan {
 
-void createFramebuffers(vkraw::VkContext& context);
+void createFramebuffers(core::runtime::VkContext& context);
 
 } // namespace core::vulkan

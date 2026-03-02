@@ -5,7 +5,7 @@
 
 namespace core::vulkan {
 
-void createRenderPass(vkraw::VkContext& context, VkFormat depthFormat)
+void createRenderPass(core::runtime::VkContext& context, VkFormat depthFormat)
 {
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = context.swapchain.image_format;

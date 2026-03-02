@@ -2,7 +2,8 @@
 
 #include "vkraw/CubeRenderTypes.h"
 #include "vkraw/EcsWorld.h"
-#include "vkraw/GlobeObject.h"
+#include "core/features/globe/GlobeObject.h"
+#include "core/features/globe/GlobeControls.h"
 #include "vkraw/SceneGraph.h"
 #include "core/runtime/UIObject.h"
 #include "core/runtime/VkContext.h"
@@ -18,7 +19,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace vkraw {
+namespace core::runtime {
 
 class VkVisualizerApp {
 public:
@@ -30,10 +31,12 @@ public:
 private:
     static constexpr uint32_t kWindowWidth = 1280;
     static constexpr uint32_t kWindowHeight = 720;
+    static constexpr uint32_t kMaxBindlessTextures = 32;
+    static constexpr uint32_t kMaxSceneObjects = 1024;
 
     VkContext context_{};
 
-    GlobeObject globe_{};
+    core::features::globe::GlobeObject globe_{};
     SceneGraph sceneGraph_{};
     EcsWorld ecs_{};
     SceneNodeId globeSceneNode_ = 0;
@@ -57,6 +60,8 @@ private:
         SceneNodeId nodeId = 0;
         uint32_t firstIndex = 0;
         uint32_t indexCount = 0;
+        uint32_t objectUniformSlot = 0;
+        uint32_t textureSlot = 0;
         glm::mat4 model{1.0f};
         vkscene::PrimitiveType primitive = vkscene::PrimitiveType::Triangles;
         std::string vertShader;
@@ -117,6 +122,7 @@ private:
 
     void processInput(float deltaSeconds);
     void updateUniformBuffer();
+    void updateObjectUniformBuffer(float elapsedSeconds);
     glm::mat4 computeBaseRotation(float elapsedSeconds) const;
     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, float elapsedSeconds, size_t frameIndex);
     void recreateSwapchain();
@@ -128,5 +134,6 @@ private:
 };
 
 int runVkrawApp(int argc, char** argv);
+int runVkSceneApp(int argc, char** argv);
 
-} // namespace vkraw
+} // namespace core::runtime

@@ -25,21 +25,29 @@ VkShaderModule createShaderModule(VkDevice device, const std::vector<char>& code
 
 namespace core::vulkan {
 
-void createDescriptorSetLayout(vkraw::VkContext& context)
+void createDescriptorSetLayout(core::runtime::VkContext& context)
 {
-    VkDescriptorSetLayoutBinding uboBinding{};
-    uboBinding.binding = 0;
-    uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    uboBinding.descriptorCount = 1;
-    uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    constexpr uint32_t kMaxBindlessTextures = 32;
+
+    VkDescriptorSetLayoutBinding globalUboBinding{};
+    globalUboBinding.binding = 0;
+    globalUboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    globalUboBinding.descriptorCount = 1;
+    globalUboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkDescriptorSetLayoutBinding objectUboBinding{};
+    objectUboBinding.binding = 1;
+    objectUboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+    objectUboBinding.descriptorCount = 1;
+    objectUboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
     VkDescriptorSetLayoutBinding textureBinding{};
-    textureBinding.binding = 1;
+    textureBinding.binding = 2;
     textureBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    textureBinding.descriptorCount = 1;
+    textureBinding.descriptorCount = kMaxBindlessTextures;
     textureBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    const std::array<VkDescriptorSetLayoutBinding, 2> bindings{uboBinding, textureBinding};
+    const std::array<VkDescriptorSetLayoutBinding, 3> bindings{globalUboBinding, objectUboBinding, textureBinding};
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -50,7 +58,7 @@ void createDescriptorSetLayout(vkraw::VkContext& context)
     }
 }
 
-void createGraphicsPipeline(vkraw::VkContext& context, const std::vector<char>& vertShaderCode, const std::vector<char>& fragShaderCode,
+void createGraphicsPipeline(core::runtime::VkContext& context, const std::vector<char>& vertShaderCode, const std::vector<char>& fragShaderCode,
                             size_t pushConstantSize, VkPrimitiveTopology topology, VkPipeline* outPipeline, bool createPipelineLayout)
 {
     VkShaderModule vertShaderModule = createShaderModule(context.device.device, vertShaderCode);
@@ -134,11 +142,13 @@ void createGraphicsPipeline(vkraw::VkContext& context, const std::vector<char>& 
     pipelineLayoutInfo.setLayoutCount = 1;
     pipelineLayoutInfo.pSetLayouts = &context.descriptorSetLayout;
     VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    pushConstantRange.offset = 0;
-    pushConstantRange.size = static_cast<uint32_t>(pushConstantSize);
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+    if (pushConstantSize > 0) {
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        pushConstantRange.offset = 0;
+        pushConstantRange.size = static_cast<uint32_t>(pushConstantSize);
+        pipelineLayoutInfo.pushConstantRangeCount = 1;
+        pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+    }
 
     if (createPipelineLayout) {
         if (vkCreatePipelineLayout(context.device.device, &pipelineLayoutInfo, nullptr, &context.pipelineLayout) != VK_SUCCESS) {
@@ -171,4 +181,3 @@ void createGraphicsPipeline(vkraw::VkContext& context, const std::vector<char>& 
 }
 
 } // namespace core::vulkan
-

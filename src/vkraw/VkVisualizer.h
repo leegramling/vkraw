@@ -1,8 +1,10 @@
 #pragma once
 
+#include "core/runtime/VkVisualizerApp.h"
+
 namespace vkraw {
 
-int runVkrawApp(int argc, char** argv);
-int runVkSceneApp(int argc, char** argv);
+inline int runVkrawApp(int argc, char** argv) { return core::runtime::runVkrawApp(argc, argv); }
+inline int runVkSceneApp(int argc, char** argv) { return core::runtime::runVkSceneApp(argc, argv); }
 
 } // namespace vkraw

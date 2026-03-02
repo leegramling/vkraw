@@ -4,6 +4,6 @@
 
 namespace core::vulkan {
 
-void createSwapchain(vkraw::VkContext& context, GLFWwindow* window);
+void createSwapchain(core::runtime::VkContext& context, GLFWwindow* window);
 
 } // namespace core::vulkan

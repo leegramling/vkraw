@@ -13,7 +13,7 @@
 #include <string>
 #include <stdexcept>
 
-namespace vkraw {
+namespace core::runtime {
 
 std::vector<char> VkVisualizerApp::readFile(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
@@ -283,6 +283,12 @@ void VkVisualizerApp::cleanup() {
     if (context_.uniformBufferMemory != VK_NULL_HANDLE) {
         vkFreeMemory(context_.device.device, context_.uniformBufferMemory, nullptr);
     }
+    if (context_.objectUniformBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(context_.device.device, context_.objectUniformBuffer, nullptr);
+    }
+    if (context_.objectUniformBufferMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(context_.device.device, context_.objectUniformBufferMemory, nullptr);
+    }
     destroyTextureResources();
     if (context_.indexBuffer != VK_NULL_HANDLE) {
         vkDestroyBuffer(context_.device.device, context_.indexBuffer, nullptr);
@@ -340,4 +346,4 @@ int runVkSceneApp(int argc, char** argv)
     return core::runVisualizerApp(argc, argv, true, "vkScene");
 }
 
-} // namespace vkraw
+} // namespace core::runtime

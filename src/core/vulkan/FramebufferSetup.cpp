@@ -5,7 +5,7 @@
 
 namespace core::vulkan {
 
-void createFramebuffers(vkraw::VkContext& context)
+void createFramebuffers(core::runtime::VkContext& context)
 {
     context.swapchainFramebuffers.resize(context.swapchainImageViews.size());
 

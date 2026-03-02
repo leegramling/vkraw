@@ -30,7 +30,7 @@ void printHelp(const char* appName)
 int runVisualizerApp(int argc, char** argv, bool sceneMode, const char* appName)
 {
     try {
-        vkraw::VkVisualizerApp visualizer;
+        core::runtime::VkVisualizerApp visualizer;
         visualizer.setSceneMode(sceneMode);
 
         for (int i = 1; i < argc; ++i) {
