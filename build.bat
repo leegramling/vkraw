@@ -87,15 +87,21 @@ echo [INFO] Build dir: %BUILD_DIR%
 
 if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 
-set "EXTRA_CMAKE_ARGS="
+set "EXTRA_CMAKE_ARGS=-DVKRAW_BUILD_VKCORNELL=ON"
 if /I "%OS%"=="Windows_NT" (
-  set "EXTRA_CMAKE_ARGS=-DVKRAW_USE_SYSTEM_IMAGE_LIBS=OFF"
+  set "EXTRA_CMAKE_ARGS=%EXTRA_CMAKE_ARGS% -DVKRAW_USE_SYSTEM_IMAGE_LIBS=OFF"
 )
 
 cmake -S . -B "%BUILD_DIR%" %GEN% %TYPE_ARG% %EXTRA_CMAKE_ARGS%
 if errorlevel 1 exit /b 1
 
-cmake --build "%BUILD_DIR%" --parallel %CFG% --target vkraw vkvsg vkglobe vkcornell_vc
-if errorlevel 1 exit /b 1
+set "CORNELL_TARGET=vkcornell_vc"
+cmake --build "%BUILD_DIR%" --parallel %CFG% --target vkraw vkvsg vkglobe %CORNELL_TARGET%
+if errorlevel 1 (
+  echo [WARN] Target "%CORNELL_TARGET%" not found. Retrying with legacy target "vkcornell"...
+  set "CORNELL_TARGET=vkcornell"
+  cmake --build "%BUILD_DIR%" --parallel %CFG% --target vkraw vkvsg vkglobe %CORNELL_TARGET%
+  if errorlevel 1 exit /b 1
+)
 
-echo [OK] Build complete: vkraw + vkvsg + vkglobe + vkcornell_vc
+echo [OK] Build complete: vkraw + vkvsg + vkglobe + %CORNELL_TARGET%
