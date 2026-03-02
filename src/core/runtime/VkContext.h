@@ -12,6 +12,13 @@ namespace core::runtime {
 constexpr int kMaxFramesInFlight = 1;
 
 struct VkContext {
+    struct TextureResource {
+        VkImage image = VK_NULL_HANDLE;
+        VkDeviceMemory memory = VK_NULL_HANDLE;
+        VkImageView view = VK_NULL_HANDLE;
+        VkSampler sampler = VK_NULL_HANDLE;
+    };
+
     GLFWwindow* window = nullptr;
 
     vkb::Instance instance{};
@@ -39,10 +46,7 @@ struct VkContext {
     VkDeviceMemory depthImageMemory = VK_NULL_HANDLE;
     VkImageView depthImageView = VK_NULL_HANDLE;
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
-    VkImage earthTextureImage = VK_NULL_HANDLE;
-    VkDeviceMemory earthTextureMemory = VK_NULL_HANDLE;
-    VkImageView earthTextureView = VK_NULL_HANDLE;
-    VkSampler earthTextureSampler = VK_NULL_HANDLE;
+    std::vector<TextureResource> bindlessTextures{};
 
     VkBuffer vertexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;

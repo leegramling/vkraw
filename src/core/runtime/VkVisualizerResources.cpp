@@ -163,6 +163,24 @@ std::vector<uint8_t> makeProceduralEarthTexture(uint32_t width, uint32_t height)
     return pixels;
 }
 
+std::vector<uint8_t> makeCheckerTexture(uint32_t width, uint32_t height)
+{
+    std::vector<uint8_t> pixels(static_cast<size_t>(width) * height * 4U, 255U);
+    constexpr uint32_t kCell = 32;
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+            const bool dark = (((x / kCell) + (y / kCell)) % 2U) == 0U;
+            const glm::vec3 color = dark ? glm::vec3(0.92f, 0.32f, 0.18f) : glm::vec3(0.96f, 0.92f, 0.18f);
+            const size_t index = (static_cast<size_t>(y) * width + x) * 4U;
+            pixels[index + 0] = static_cast<uint8_t>(color.r * 255.0f);
+            pixels[index + 1] = static_cast<uint8_t>(color.g * 255.0f);
+            pixels[index + 2] = static_cast<uint8_t>(color.b * 255.0f);
+            pixels[index + 3] = 255U;
+        }
+    }
+    return pixels;
+}
+
 } // namespace
 
 uint32_t VkVisualizerApp::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
@@ -296,94 +314,105 @@ void VkVisualizerApp::createTextureResources() {
             textureSourceLabel_ = "procedural(downscaled)";
         }
     }
-    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(image.pixels.size());
+    auto createTexture = [&](const LoadedImage& src) -> VkContext::TextureResource {
+        VkContext::TextureResource out{};
+        const VkDeviceSize imageSize = static_cast<VkDeviceSize>(src.pixels.size());
 
-    VkBuffer stagingBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
-    createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 stagingBuffer, stagingMemory);
-    uploadToMemory(stagingMemory, image.pixels.data(), imageSize);
+        VkBuffer stagingBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+        createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                     stagingBuffer, stagingMemory);
+        uploadToMemory(stagingMemory, src.pixels.data(), imageSize);
 
-    createImage(image.width, image.height, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL,
-                VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                context_.earthTextureImage, context_.earthTextureMemory);
+        createImage(src.width, src.height, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL,
+                    VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, out.image, out.memory);
 
-    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+        VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
-    VkImageMemoryBarrier toTransferBarrier{};
-    toTransferBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toTransferBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    toTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    toTransferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toTransferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toTransferBarrier.image = context_.earthTextureImage;
-    toTransferBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    toTransferBarrier.subresourceRange.baseMipLevel = 0;
-    toTransferBarrier.subresourceRange.levelCount = 1;
-    toTransferBarrier.subresourceRange.baseArrayLayer = 0;
-    toTransferBarrier.subresourceRange.layerCount = 1;
-    toTransferBarrier.srcAccessMask = 0;
-    toTransferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        VkImageMemoryBarrier toTransferBarrier{};
+        toTransferBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toTransferBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        toTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        toTransferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toTransferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toTransferBarrier.image = out.image;
+        toTransferBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        toTransferBarrier.subresourceRange.baseMipLevel = 0;
+        toTransferBarrier.subresourceRange.levelCount = 1;
+        toTransferBarrier.subresourceRange.baseArrayLayer = 0;
+        toTransferBarrier.subresourceRange.layerCount = 1;
+        toTransferBarrier.srcAccessMask = 0;
+        toTransferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                             &toTransferBarrier);
 
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1,
-                         &toTransferBarrier);
+        VkBufferImageCopy region{};
+        region.bufferOffset = 0;
+        region.bufferRowLength = 0;
+        region.bufferImageHeight = 0;
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset = {0, 0, 0};
+        region.imageExtent = {src.width, src.height, 1};
+        vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, out.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-    VkBufferImageCopy region{};
-    region.bufferOffset = 0;
-    region.bufferRowLength = 0;
-    region.bufferImageHeight = 0;
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel = 0;
-    region.imageSubresource.baseArrayLayer = 0;
-    region.imageSubresource.layerCount = 1;
-    region.imageOffset = {0, 0, 0};
-    region.imageExtent = {image.width, image.height, 1};
-    vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, context_.earthTextureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        VkImageMemoryBarrier toShaderReadBarrier{};
+        toShaderReadBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toShaderReadBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        toShaderReadBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        toShaderReadBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toShaderReadBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toShaderReadBarrier.image = out.image;
+        toShaderReadBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        toShaderReadBarrier.subresourceRange.baseMipLevel = 0;
+        toShaderReadBarrier.subresourceRange.levelCount = 1;
+        toShaderReadBarrier.subresourceRange.baseArrayLayer = 0;
+        toShaderReadBarrier.subresourceRange.layerCount = 1;
+        toShaderReadBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        toShaderReadBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr,
+                             1, &toShaderReadBarrier);
 
-    VkImageMemoryBarrier toShaderReadBarrier{};
-    toShaderReadBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toShaderReadBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    toShaderReadBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    toShaderReadBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toShaderReadBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toShaderReadBarrier.image = context_.earthTextureImage;
-    toShaderReadBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    toShaderReadBarrier.subresourceRange.baseMipLevel = 0;
-    toShaderReadBarrier.subresourceRange.levelCount = 1;
-    toShaderReadBarrier.subresourceRange.baseArrayLayer = 0;
-    toShaderReadBarrier.subresourceRange.layerCount = 1;
-    toShaderReadBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    toShaderReadBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        endSingleTimeCommands(commandBuffer);
 
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
-                         &toShaderReadBarrier);
+        vkDestroyBuffer(context_.device.device, stagingBuffer, nullptr);
+        vkFreeMemory(context_.device.device, stagingMemory, nullptr);
 
-    endSingleTimeCommands(commandBuffer);
+        out.view = createImageView(out.image, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
 
-    vkDestroyBuffer(context_.device.device, stagingBuffer, nullptr);
-    vkFreeMemory(context_.device.device, stagingMemory, nullptr);
+        VkSamplerCreateInfo samplerInfo{};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = VK_FILTER_LINEAR;
+        samplerInfo.minFilter = VK_FILTER_LINEAR;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.anisotropyEnable = VK_FALSE;
+        samplerInfo.maxAnisotropy = 1.0f;
+        samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+        samplerInfo.unnormalizedCoordinates = VK_FALSE;
+        samplerInfo.compareEnable = VK_FALSE;
+        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        samplerInfo.minLod = 0.0f;
+        samplerInfo.maxLod = 0.0f;
+        if (vkCreateSampler(context_.device.device, &samplerInfo, nullptr, &out.sampler) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create texture sampler");
+        }
+        return out;
+    };
 
-    context_.earthTextureView = createImageView(context_.earthTextureImage, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+    context_.bindlessTextures.clear();
+    context_.bindlessTextures.push_back(createTexture(image)); // slot 0: earth
 
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.anisotropyEnable = VK_FALSE;
-    samplerInfo.maxAnisotropy = 1.0f;
-    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-    samplerInfo.unnormalizedCoordinates = VK_FALSE;
-    samplerInfo.compareEnable = VK_FALSE;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = 0.0f;
+    LoadedImage checker{};
+    checker.width = 512;
+    checker.height = 512;
+    checker.pixels = makeCheckerTexture(checker.width, checker.height);
+    context_.bindlessTextures.push_back(createTexture(checker)); // slot 1: checker
 
-    if (vkCreateSampler(context_.device.device, &samplerInfo, nullptr, &context_.earthTextureSampler) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create earth texture sampler");
-    }
+    textureSourceLabel_ += " +checker";
 }
 
 void VkVisualizerApp::createDescriptorPool() {
@@ -443,13 +472,19 @@ void VkVisualizerApp::createDescriptorSet() {
     objectUboWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     objectUboWrite.pBufferInfo = &objectBufferInfo;
 
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = context_.earthTextureView;
-    imageInfo.sampler = context_.earthTextureSampler;
-
     std::array<VkDescriptorImageInfo, kMaxBindlessTextures> imageInfos{};
-    imageInfos.fill(imageInfo);
+    VkDescriptorImageInfo fallback{};
+    fallback.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    if (!context_.bindlessTextures.empty()) {
+        fallback.imageView = context_.bindlessTextures[0].view;
+        fallback.sampler = context_.bindlessTextures[0].sampler;
+    }
+    imageInfos.fill(fallback);
+    for (size_t i = 0; i < context_.bindlessTextures.size() && i < imageInfos.size(); ++i) {
+        imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfos[i].imageView = context_.bindlessTextures[i].view;
+        imageInfos[i].sampler = context_.bindlessTextures[i].sampler;
+    }
 
     VkWriteDescriptorSet textureWrite{};
     textureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -692,22 +727,25 @@ void VkVisualizerApp::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t
 }
 
 void VkVisualizerApp::destroyTextureResources() {
-    if (context_.earthTextureSampler != VK_NULL_HANDLE) {
-        vkDestroySampler(context_.device.device, context_.earthTextureSampler, nullptr);
-        context_.earthTextureSampler = VK_NULL_HANDLE;
+    for (auto& texture : context_.bindlessTextures) {
+        if (texture.sampler != VK_NULL_HANDLE) {
+            vkDestroySampler(context_.device.device, texture.sampler, nullptr);
+            texture.sampler = VK_NULL_HANDLE;
+        }
+        if (texture.view != VK_NULL_HANDLE) {
+            vkDestroyImageView(context_.device.device, texture.view, nullptr);
+            texture.view = VK_NULL_HANDLE;
+        }
+        if (texture.image != VK_NULL_HANDLE) {
+            vkDestroyImage(context_.device.device, texture.image, nullptr);
+            texture.image = VK_NULL_HANDLE;
+        }
+        if (texture.memory != VK_NULL_HANDLE) {
+            vkFreeMemory(context_.device.device, texture.memory, nullptr);
+            texture.memory = VK_NULL_HANDLE;
+        }
     }
-    if (context_.earthTextureView != VK_NULL_HANDLE) {
-        vkDestroyImageView(context_.device.device, context_.earthTextureView, nullptr);
-        context_.earthTextureView = VK_NULL_HANDLE;
-    }
-    if (context_.earthTextureImage != VK_NULL_HANDLE) {
-        vkDestroyImage(context_.device.device, context_.earthTextureImage, nullptr);
-        context_.earthTextureImage = VK_NULL_HANDLE;
-    }
-    if (context_.earthTextureMemory != VK_NULL_HANDLE) {
-        vkFreeMemory(context_.device.device, context_.earthTextureMemory, nullptr);
-        context_.earthTextureMemory = VK_NULL_HANDLE;
-    }
+    context_.bindlessTextures.clear();
 }
 
 void VkVisualizerApp::initSceneSystems()
