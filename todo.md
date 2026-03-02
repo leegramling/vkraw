@@ -6,23 +6,24 @@ This plan is derived from `osm.md` and is organized by priority.
 
 Goal: stop coupling new apps to `src/vkraw/*` directly and move reusable Vulkan/app scaffolding into `src/core/`.
 
-- [ ] Create `src/core/` module and move shared renderer/app abstractions there.
-- [ ] Define stable interfaces for:
-  - [ ] Vulkan context/device/swapchain lifecycle
-  - [ ] Buffer/image/upload helpers
-  - [ ] Pipeline creation (including topology selection)
-  - [ ] Descriptor set layout/pool allocation helpers
-  - [ ] Frame loop hooks (`processInput`, `update`, `record`, `draw`)
-- [ ] Move shared scene abstractions into core:
-  - [ ] `SceneGraph`
-  - [ ] `EcsWorld`
-  - [ ] `RenderObject` base
-  - [ ] scene draw-item representation
-- [ ] Move shared UI shell (ImGui init + main menu hooks) into core.
-- [ ] Add `vkScene` to use only `src/core` (no includes from `src/vkraw/*`).
-- [ ] Keep `vkraw` as a feature app built on `src/core` (globe-specific logic only in `src/vkraw`).
-- [ ] Add bindless descriptor path in core for per-object texture/material indexing.
-- [ ] Add per-object uniform management in core (allocation/update model).
+- [x] Create `src/core/` module and move shared renderer/app abstractions there.
+- [x] Define stable interfaces for:
+  - [x] Vulkan context/device/swapchain lifecycle
+  - [x] Buffer/image/upload helpers
+  - [x] Pipeline creation (including topology selection)
+  - [x] Descriptor set layout/pool allocation helpers
+  - [x] Frame loop hooks (`processInput`, `update`, `record`, `draw`)
+- [x] Move shared scene abstractions into core:
+  - [x] `SceneGraph`
+  - [x] `EcsWorld`
+  - [x] `RenderObject` base
+  - [x] scene draw-item representation
+- [x] Move shared UI shell (ImGui init + main menu hooks) into core.
+- [x] Add `vkScene` to use only `src/core` (no includes from `src/vkraw/*`).
+- [x] Keep `vkraw` as a feature app built on `src/core` (globe-specific logic only in `src/vkraw`).
+- [x] Add bindless descriptor path in core for per-object texture/material indexing.
+- [x] Add per-object uniform management in core (allocation/update model).
+- [x] Add named texture-slot registry in core runtime (`earth`, `checker`, and object material slot binding).
 - [ ] Add documentation:
   - [ ] `core.md` architecture and ownership boundaries
   - [ ] migration checklist for adding new apps (`vkScene`, future apps)
@@ -33,11 +34,15 @@ Goal: use Natural Docs for code documentation and include Mermaid diagrams in ge
 
 - [ ] Evaluate and lock Natural Docs version/tooling for this repo.
 - [ ] Add Natural Docs config and build command(s) to the repo.
+  - [ ] Add `docs/naturaldocs/` project config
+  - [ ] Add `docs/build_docs.sh` and Windows equivalent
+  - [ ] Add CMake custom target `docs`
 - [ ] Define project doc style conventions:
   - [ ] file/class/function comment templates
   - [ ] Mermaid block formatting conventions in comments/docs
   - [ ] naming/placement conventions for architecture diagrams
 - [ ] Validate Mermaid rendering in generated HTML output with at least one sample diagram.
+  - [ ] Add one embedded Mermaid block in a C++ file comment and verify output
 - [ ] Add CI or local check target to regenerate docs and validate build success.
 - [ ] After `src/core` refactor is complete, add/update documentation comments across all source files.
 - [ ] Add architecture docs with Mermaid diagrams for:
