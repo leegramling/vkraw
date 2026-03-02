@@ -114,7 +114,7 @@ if not defined CORNELL_TARGET (
   exit /b 1
 )
 
-cmake --build "%BUILD_DIR%" --parallel %CFG% --target vkraw vkvsg vkglobe !CORNELL_TARGET!
+cmake --build "%BUILD_DIR%" --parallel %CFG% --target vkraw vkScene vkvsg vkglobe !CORNELL_TARGET!
 if errorlevel 1 exit /b 1
 
-echo [OK] Build complete: vkraw + vkvsg + vkglobe + %CORNELL_TARGET%
+echo [OK] Build complete: vkraw + vkScene + vkvsg + vkglobe + %CORNELL_TARGET%

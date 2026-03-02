@@ -8,9 +8,31 @@
 
 #include <VkBootstrap.h>
 
+#include <string>
 #include <stdexcept>
 
 namespace vkraw {
+
+std::string VkVisualizerApp::makeScenePipelineKey(vkscene::PrimitiveType primitive, const std::string& vertShader, const std::string& fragShader)
+{
+    const char* prim = (primitive == vkscene::PrimitiveType::Lines) ? "lines" : "triangles";
+    return std::string(prim) + "|" + vertShader + "|" + fragShader;
+}
+
+VkPipeline VkVisualizerApp::getOrCreateScenePipeline(vkscene::PrimitiveType primitive, const std::string& vertShader, const std::string& fragShader)
+{
+    const std::string key = makeScenePipelineKey(primitive, vertShader, fragShader);
+    auto it = scenePipelineCache_.find(key);
+    if (it != scenePipelineCache_.end()) return it->second;
+
+    const auto vertShaderCode = readShaderFile(vertShader);
+    const auto fragShaderCode = readShaderFile(fragShader);
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    const VkPrimitiveTopology topology = (primitive == vkscene::PrimitiveType::Lines) ? VK_PRIMITIVE_TOPOLOGY_LINE_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    setup::createGraphicsPipeline(context_, vertShaderCode, fragShaderCode, sizeof(PushConstantData), topology, &pipeline, false);
+    scenePipelineCache_.emplace(key, pipeline);
+    return pipeline;
+}
 
 void VkVisualizerApp::createInstance() {
     vkb::InstanceBuilder builder;
@@ -79,7 +101,9 @@ void VkVisualizerApp::createDescriptorSetLayout() {
 void VkVisualizerApp::createGraphicsPipeline() {
     const auto vertShaderCode = readShaderFile("cube.vert.spv");
     const auto fragShaderCode = readShaderFile("cube.frag.spv");
-    setup::createGraphicsPipeline(context_, vertShaderCode, fragShaderCode, sizeof(PushConstantData));
+    setup::createGraphicsPipeline(context_, vertShaderCode, fragShaderCode, sizeof(PushConstantData), VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, &context_.pipeline,
+                                  true);
+    scenePipelineCache_.clear();
 }
 
 void VkVisualizerApp::createFramebuffers() {

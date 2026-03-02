@@ -6,11 +6,16 @@
 #include "vkraw/SceneGraph.h"
 #include "vkraw/UIObject.h"
 #include "vkraw/VkContext.h"
+#include "vkscene/Scene.h"
+#include "vkscene/RenderObject.h"
 
 #include <glm/glm.hpp>
 
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace vkraw {
@@ -20,6 +25,7 @@ public:
     void run();
     void setRunDurationSeconds(float seconds) { runDurationSeconds_ = seconds; }
     void setEarthTexturePath(std::string path) { earthTexturePath_ = std::move(path); }
+    void setSceneMode(bool enable) { sceneModeEnabled_ = enable; }
 
 private:
     static constexpr uint32_t kWindowWidth = 1280;
@@ -44,6 +50,22 @@ private:
     std::vector<Vertex> sceneVertices_{};
     std::vector<uint32_t> sceneIndices_{};
     uint32_t sceneIndexCount_ = 0;
+    bool sceneModeEnabled_ = false;
+    vkscene::Scene scene_{};
+    bool requestExit_ = false;
+    struct SceneDrawItem {
+        SceneNodeId nodeId = 0;
+        uint32_t firstIndex = 0;
+        uint32_t indexCount = 0;
+        glm::mat4 model{1.0f};
+        vkscene::PrimitiveType primitive = vkscene::PrimitiveType::Triangles;
+        std::string vertShader;
+        std::string fragShader;
+    };
+    std::vector<SceneDrawItem> sceneDrawItems_{};
+    std::unordered_map<std::string, VkPipeline> scenePipelineCache_{};
+    static std::string makeScenePipelineKey(vkscene::PrimitiveType primitive, const std::string& vertShader, const std::string& fragShader);
+    VkPipeline getOrCreateScenePipeline(vkscene::PrimitiveType primitive, const std::string& vertShader, const std::string& fragShader);
 
     static void framebufferResizeCallback(GLFWwindow* window, int, int);
 

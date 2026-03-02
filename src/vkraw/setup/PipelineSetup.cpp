@@ -50,7 +50,8 @@ void createDescriptorSetLayout(VkContext& context)
     }
 }
 
-void createGraphicsPipeline(VkContext& context, const std::vector<char>& vertShaderCode, const std::vector<char>& fragShaderCode, size_t pushConstantSize)
+void createGraphicsPipeline(VkContext& context, const std::vector<char>& vertShaderCode, const std::vector<char>& fragShaderCode, size_t pushConstantSize,
+                            VkPrimitiveTopology topology, VkPipeline* outPipeline, bool createPipelineLayout)
 {
     VkShaderModule vertShaderModule = createShaderModule(context.device.device, vertShaderCode);
     VkShaderModule fragShaderModule = createShaderModule(context.device.device, fragShaderCode);
@@ -81,7 +82,7 @@ void createGraphicsPipeline(VkContext& context, const std::vector<char>& vertSha
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.topology = topology;
 
     VkViewport viewport{};
     viewport.x = 0.0f;
@@ -139,8 +140,10 @@ void createGraphicsPipeline(VkContext& context, const std::vector<char>& vertSha
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-    if (vkCreatePipelineLayout(context.device.device, &pipelineLayoutInfo, nullptr, &context.pipelineLayout) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create pipeline layout");
+    if (createPipelineLayout) {
+        if (vkCreatePipelineLayout(context.device.device, &pipelineLayoutInfo, nullptr, &context.pipelineLayout) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create pipeline layout");
+        }
     }
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
@@ -158,7 +161,8 @@ void createGraphicsPipeline(VkContext& context, const std::vector<char>& vertSha
     pipelineInfo.renderPass = context.renderPass;
     pipelineInfo.subpass = 0;
 
-    if (vkCreateGraphicsPipelines(context.device.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &context.pipeline) != VK_SUCCESS) {
+    VkPipeline* targetPipeline = outPipeline ? outPipeline : &context.pipeline;
+    if (vkCreateGraphicsPipelines(context.device.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, targetPipeline) != VK_SUCCESS) {
         throw std::runtime_error("failed to create graphics pipeline");
     }
 

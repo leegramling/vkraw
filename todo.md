@@ -2,6 +2,31 @@
 
 This plan is derived from `osm.md` and is organized by priority.
 
+## Cross-Project TODO (`src/core` extraction)
+
+Goal: stop coupling new apps to `src/vkraw/*` directly and move reusable Vulkan/app scaffolding into `src/core/`.
+
+- [ ] Create `src/core/` module and move shared renderer/app abstractions there.
+- [ ] Define stable interfaces for:
+  - [ ] Vulkan context/device/swapchain lifecycle
+  - [ ] Buffer/image/upload helpers
+  - [ ] Pipeline creation (including topology selection)
+  - [ ] Descriptor set layout/pool allocation helpers
+  - [ ] Frame loop hooks (`processInput`, `update`, `record`, `draw`)
+- [ ] Move shared scene abstractions into core:
+  - [ ] `SceneGraph`
+  - [ ] `EcsWorld`
+  - [ ] `RenderObject` base
+  - [ ] scene draw-item representation
+- [ ] Move shared UI shell (ImGui init + main menu hooks) into core.
+- [ ] Add `vkScene` to use only `src/core` (no includes from `src/vkraw/*`).
+- [ ] Keep `vkraw` as a feature app built on `src/core` (globe-specific logic only in `src/vkraw`).
+- [ ] Add bindless descriptor path in core for per-object texture/material indexing.
+- [ ] Add per-object uniform management in core (allocation/update model).
+- [ ] Add documentation:
+  - [ ] `core.md` architecture and ownership boundaries
+  - [ ] migration checklist for adding new apps (`vkScene`, future apps)
+
 ## Workflow Rule
 
 - [ ] Always run `git add` and commit after each completed task.

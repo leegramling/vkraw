@@ -220,6 +220,13 @@ void VkVisualizerApp::cleanupSwapchain() {
         vkDestroyPipeline(context_.device.device, context_.pipeline, nullptr);
         context_.pipeline = VK_NULL_HANDLE;
     }
+    for (auto& [key, pipeline] : scenePipelineCache_) {
+        (void)key;
+        if (pipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(context_.device.device, pipeline, nullptr);
+        }
+    }
+    scenePipelineCache_.clear();
     if (context_.pipelineLayout != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(context_.device.device, context_.pipelineLayout, nullptr);
         context_.pipelineLayout = VK_NULL_HANDLE;
@@ -337,6 +344,28 @@ int runVkrawApp(int argc, char** argv)
         visualizer.run();
     } catch (const std::exception& e) {
         std::cout << "[EXIT] vkraw status=FAIL code=1 reason=\"" << e.what() << "\"" << std::endl;
+        std::cerr << "error: " << e.what() << '\n';
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
+}
+
+int runVkSceneApp(int argc, char** argv)
+{
+    try {
+        VkVisualizerApp visualizer;
+        visualizer.setSceneMode(true);
+        for (int i = 1; i < argc; ++i) {
+            const std::string arg = argv[i];
+            if ((arg == "--seconds" || arg == "--duration") && (i + 1) < argc) {
+                visualizer.setRunDurationSeconds(std::stof(argv[++i]));
+            } else if (arg == "--earth-texture" && (i + 1) < argc) {
+                visualizer.setEarthTexturePath(argv[++i]);
+            }
+        }
+        visualizer.run();
+    } catch (const std::exception& e) {
+        std::cout << "[EXIT] vkScene status=FAIL code=1 reason=\"" << e.what() << "\"" << std::endl;
         std::cerr << "error: " << e.what() << '\n';
         return EXIT_FAILURE;
     }

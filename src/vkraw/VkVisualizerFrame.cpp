@@ -14,7 +14,9 @@
 namespace vkraw {
 
 void VkVisualizerApp::processInput(float deltaSeconds) {
-    globe_.processInput(context_.window, deltaSeconds);
+    if (!sceneModeEnabled_) {
+        globe_.processInput(context_.window, deltaSeconds);
+    }
 }
 
 void VkVisualizerApp::updateUniformBuffer() {
@@ -30,6 +32,9 @@ void VkVisualizerApp::updateUniformBuffer() {
 }
 
 glm::mat4 VkVisualizerApp::computeBaseRotation(float elapsedSeconds) const {
+    if (sceneModeEnabled_) {
+        return glm::mat4(1.0f);
+    }
     return globe_.computeBaseRotation(elapsedSeconds);
 }
 
@@ -74,7 +79,25 @@ void VkVisualizerApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_
     PushConstantData push{};
     push.model = baseRotation;
     vkCmdPushConstants(commandBuffer, context_.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstantData), &push);
-    vkCmdDrawIndexed(commandBuffer, sceneIndexCount_, 1, 0, 0, 0);
+    if (!sceneModeEnabled_) {
+        if (sceneIndexCount_ > 0) {
+            vkCmdDrawIndexed(commandBuffer, sceneIndexCount_, 1, 0, 0, 0);
+        }
+    } else {
+        for (const auto& item : sceneDrawItems_) {
+            const std::string key = makeScenePipelineKey(item.primitive, item.vertShader, item.fragShader);
+            auto it = scenePipelineCache_.find(key);
+            if (it == scenePipelineCache_.end() || it->second == VK_NULL_HANDLE || item.indexCount == 0) continue;
+            VkPipeline objectPipeline = it->second;
+
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, objectPipeline);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, context_.pipelineLayout, 0, 1, &context_.descriptorSet, 0, nullptr);
+            PushConstantData objectPush{};
+            objectPush.model = item.model;
+            vkCmdPushConstants(commandBuffer, context_.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstantData), &objectPush);
+            vkCmdDrawIndexed(commandBuffer, item.indexCount, 1, item.firstIndex, 0, 0);
+        }
+    }
 
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 
@@ -127,6 +150,16 @@ void VkVisualizerApp::drawFrame(float deltaSeconds, float elapsedSeconds) {
     vkResetCommandBuffer(context_.commandBuffers[imageIndex], 0);
 
     processInput(deltaSeconds);
+    if (sceneModeEnabled_) {
+        scene_.update(deltaSeconds, elapsedSeconds);
+        sceneGraph_ = scene_.graph();
+        ecs_ = scene_.ecs();
+        for (auto& item : sceneDrawItems_) {
+            if (const SceneNode* node = sceneGraph_.find(item.nodeId)) {
+                item.model = node->worldTransform;
+            }
+        }
+    }
 
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -135,9 +168,13 @@ void VkVisualizerApp::drawFrame(float deltaSeconds, float elapsedSeconds) {
     ui_.fps = (deltaSeconds > 0.0f) ? (1.0f / deltaSeconds) : 0.0f;
     ui_.frameTimeMs = 1000.0f * deltaSeconds;
     ui_.gpuFrameMs = gpuFrameMs_;
+    requestExit_ = false;
     if (ui_.draw(globe_, presentModeToString(context_.selectedPresentMode), context_.gpuTimestampQueryPool != VK_NULL_HANDLE, sceneGraph_.nodeCount(),
-                 sceneGraph_.visibleNodeCount(), ecs_.entityCount(), ecs_.visibleCount())) {
+                 sceneGraph_.visibleNodeCount(), ecs_.entityCount(), ecs_.visibleCount(), sceneModeEnabled_, requestExit_)) {
         rebuildGpuMeshBuffers();
+    }
+    if (requestExit_) {
+        glfwSetWindowShouldClose(context_.window, GLFW_TRUE);
     }
 
     ImGui::Render();

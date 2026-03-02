@@ -1,6 +1,7 @@
 #include "vkraw/VkVisualizerApp.h"
 
 #include "vkraw/CubeRenderTypes.h"
+#include "vkscene/BasicObjects.h"
 
 #if __has_include(<stb_image.h>)
 #define VKRAW_HAS_STB_IMAGE 1
@@ -24,6 +25,7 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
@@ -680,6 +682,13 @@ void VkVisualizerApp::destroyTextureResources() {
 
 void VkVisualizerApp::initSceneSystems()
 {
+    if (sceneModeEnabled_) {
+        scene_.addObject(std::make_shared<vkscene::TriangleObject>(), "SceneTriangle", scene_.rootNode());
+        scene_.addObject(std::make_shared<vkscene::LineCircleObject>(128, 95.0f), "SceneLineCircle", scene_.rootNode());
+        scene_.update(0.0f, 0.0f);
+        return;
+    }
+
     globeEntity_ = ecs_.createEntity();
     ecs_.setTransform(globeEntity_, TransformComponent{glm::mat4(1.0f)});
     ecs_.setVisibility(globeEntity_, VisibilityComponent{true});
@@ -697,6 +706,45 @@ void VkVisualizerApp::initSceneSystems()
 void VkVisualizerApp::rebuildSceneMesh() {
     sceneVertices_.clear();
     sceneIndices_.clear();
+    sceneDrawItems_.clear();
+
+    if (sceneModeEnabled_) {
+        scene_.update(0.0f, 0.0f);
+        sceneGraph_ = scene_.graph();
+        ecs_ = scene_.ecs();
+
+        for (const SceneNodeId nodeId : scene_.objectNodes()) {
+            const SceneNode* node = sceneGraph_.find(nodeId);
+            if (!node || !node->visible) continue;
+            auto obj = scene_.object(nodeId);
+            if (!obj) continue;
+
+            std::vector<Vertex> objectVertices;
+            std::vector<uint32_t> objectIndices;
+            obj->buildMesh(objectVertices, objectIndices);
+
+            const uint32_t baseVertex = static_cast<uint32_t>(sceneVertices_.size());
+            const uint32_t firstIndex = static_cast<uint32_t>(sceneIndices_.size());
+            sceneVertices_.insert(sceneVertices_.end(), objectVertices.begin(), objectVertices.end());
+            for (uint32_t idx : objectIndices) {
+                sceneIndices_.push_back(baseVertex + idx);
+            }
+            sceneDrawItems_.push_back(SceneDrawItem{
+                .nodeId = nodeId,
+                .firstIndex = firstIndex,
+                .indexCount = static_cast<uint32_t>(objectIndices.size()),
+                .model = node->worldTransform,
+                .primitive = obj->primitive(),
+                .vertShader = obj->shaders().vertexShaderSpv,
+                .fragShader = obj->shaders().fragmentShaderSpv,
+            });
+        }
+        for (const auto& item : sceneDrawItems_) {
+            (void)getOrCreateScenePipeline(item.primitive, item.vertShader, item.fragShader);
+        }
+        sceneIndexCount_ = static_cast<uint32_t>(sceneIndices_.size());
+        return;
+    }
 
     sceneGraph_.updateWorldTransforms();
     const SceneNode* globeNode = sceneGraph_.find(globeSceneNode_);

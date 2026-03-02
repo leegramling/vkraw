@@ -196,8 +196,7 @@ if(VKRAW_BUILD_VKCORNELL)
     add_custom_target(vkcornell_shaders ALL DEPENDS ${VKCORNELL_SHADER_OUTPUTS})
 endif()
 
-add_executable(vkraw
-    src/vkraw/main.cpp
+set(VKRAW_APP_SOURCES
     src/vkraw/VkVisualizerLifecycle.cpp
     src/vkraw/VkVisualizerDevice.cpp
     src/vkraw/VkVisualizerResources.cpp
@@ -207,6 +206,11 @@ add_executable(vkraw
     src/vkraw/setup/RenderPassSetup.cpp
     src/vkraw/setup/FramebufferSetup.cpp
     src/vkraw/setup/PipelineSetup.cpp
+)
+
+add_executable(vkraw
+    src/vkraw/main.cpp
+    ${VKRAW_APP_SOURCES}
 )
 
 add_dependencies(vkraw shaders)
@@ -231,6 +235,35 @@ target_compile_definitions(vkraw PRIVATE VKRAW_SHADER_DIR="${SHADER_OUTPUT_DIR}"
 
 if(WIN32)
     target_compile_definitions(vkraw PRIVATE VK_USE_PLATFORM_WIN32_KHR)
+endif()
+
+add_executable(vkScene
+    src/vkscene/main.cpp
+    ${VKRAW_APP_SOURCES}
+)
+
+add_dependencies(vkScene shaders)
+
+target_include_directories(vkScene PRIVATE src external/glfw/deps external/stb)
+
+target_link_libraries(vkScene PRIVATE
+    vk-bootstrap::vk-bootstrap
+    glfw
+    glm::glm
+    imgui
+    Vulkan::Vulkan
+)
+
+if(VKRAW_HAS_SYSTEM_IMAGE_LIBS)
+    target_link_libraries(vkScene PRIVATE TIFF::TIFF)
+    target_compile_definitions(vkScene PRIVATE VKRAW_ENABLE_IMAGE_FILE_IO=1)
+endif()
+
+target_compile_definitions(vkScene PRIVATE GLFW_INCLUDE_NONE)
+target_compile_definitions(vkScene PRIVATE VKRAW_SHADER_DIR="${SHADER_OUTPUT_DIR}")
+
+if(WIN32)
+    target_compile_definitions(vkScene PRIVATE VK_USE_PLATFORM_WIN32_KHR)
 endif()
 
 if(VKRAW_BUILD_VKVSG)
