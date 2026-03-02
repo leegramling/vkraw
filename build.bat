@@ -95,7 +95,7 @@ if /I "%OS%"=="Windows_NT" (
 cmake -S . -B "%BUILD_DIR%" %GEN% %TYPE_ARG% %EXTRA_CMAKE_ARGS%
 if errorlevel 1 exit /b 1
 
-cmake --build "%BUILD_DIR%" --parallel %CFG% --target vkraw vkvsg vkglobe
+cmake --build "%BUILD_DIR%" --parallel %CFG% --target vkraw vkvsg vkglobe vkcornell_vc
 if errorlevel 1 exit /b 1
 
-echo [OK] Build complete: vkraw + vkvsg + vkglobe
+echo [OK] Build complete: vkraw + vkvsg + vkglobe + vkcornell_vc
