@@ -3,7 +3,6 @@
 #ifdef _WIN32
 #include <glslang/Public/ResourceLimits.h>
 #include <glslang/SPIRV/GlslangToSpv.h>
-#include <spirv_reflect.h>  // comes from spirv-reflect
 #endif
 
 #include <cmath>
