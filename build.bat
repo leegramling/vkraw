@@ -95,13 +95,26 @@ if /I "%OS%"=="Windows_NT" (
 cmake -S . -B "%BUILD_DIR%" %GEN% %TYPE_ARG% %EXTRA_CMAKE_ARGS%
 if errorlevel 1 exit /b 1
 
-set "CORNELL_TARGET=vkcornell_vc"
-cmake --build "%BUILD_DIR%" --parallel %CFG% --target vkraw vkvsg vkglobe %CORNELL_TARGET%
-if errorlevel 1 (
-  echo [WARN] Target "%CORNELL_TARGET%" not found. Retrying with legacy target "vkcornell"...
-  set "CORNELL_TARGET=vkcornell"
-  cmake --build "%BUILD_DIR%" --parallel %CFG% --target vkraw vkvsg vkglobe !CORNELL_TARGET!
-  if errorlevel 1 exit /b 1
+set "CORNELL_TARGET="
+set "TARGET_HELP_FILE=%BUILD_DIR%\_targets.txt"
+cmake --build "%BUILD_DIR%" %CFG% --target help > "%TARGET_HELP_FILE%" 2>&1
+findstr /R /C:"^... vkcornell_vc$" "%TARGET_HELP_FILE%" >nul
+if not errorlevel 1 (
+  set "CORNELL_TARGET=vkcornell_vc"
+) else (
+  findstr /R /C:"^... vkcornell$" "%TARGET_HELP_FILE%" >nul
+  if not errorlevel 1 (
+    set "CORNELL_TARGET=vkcornell"
+  )
 )
+del /q "%TARGET_HELP_FILE%" >nul 2>&1
+
+if not defined CORNELL_TARGET (
+  echo [ERROR] Neither vkcornell_vc nor vkcornell target exists in this build tree.
+  exit /b 1
+)
+
+cmake --build "%BUILD_DIR%" --parallel %CFG% --target vkraw vkvsg vkglobe !CORNELL_TARGET!
+if errorlevel 1 exit /b 1
 
 echo [OK] Build complete: vkraw + vkvsg + vkglobe + %CORNELL_TARGET%
