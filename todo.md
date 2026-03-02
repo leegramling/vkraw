@@ -25,8 +25,8 @@ Goal: stop coupling new apps to `src/vkraw/*` directly and move reusable Vulkan/
 - [x] Add per-object uniform management in core (allocation/update model).
 - [x] Add named texture-slot registry in core runtime (`earth`, `checker`, and object material slot binding).
 - [ ] Add documentation:
-  - [ ] `core.md` architecture and ownership boundaries
-  - [ ] migration checklist for adding new apps (`vkScene`, future apps)
+  - [x] `core.md` architecture and ownership boundaries
+  - [x] migration checklist for adding new apps (`vkScene`, future apps)
 
 ## Documentation TODO (Natural Docs + Mermaid)
 
