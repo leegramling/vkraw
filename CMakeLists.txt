@@ -289,6 +289,22 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(procRhai PRIVATE ${CMAKE_DL_LIBS})
 endif()
 
+if(WIN32)
+    add_custom_target(procRhai_bundle
+        COMMAND cmd /c "${CMAKE_CURRENT_SOURCE_DIR}/src/procRhai/copy_animvm.bat ${CMAKE_CURRENT_BINARY_DIR}"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        DEPENDS procRhai
+        COMMENT "Building and copying animvm.dll next to procRhai"
+    )
+else()
+    add_custom_target(procRhai_bundle
+        COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/src/procRhai/copy_animvm.sh" "${CMAKE_CURRENT_BINARY_DIR}"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        DEPENDS procRhai
+        COMMENT "Building and copying libanimvm next to procRhai"
+    )
+endif()
+
 if(VKRAW_BUILD_VKVSG)
     add_executable(vkvsg
         src/vkvsg/main.cpp

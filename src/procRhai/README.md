@@ -34,6 +34,25 @@ On Windows:
 build.bat
 ```
 
+## One-Command Bundle (build + copy plugin)
+
+Linux/macOS:
+
+```bash
+cmake --build build --target procRhai_bundle
+```
+
+Windows:
+
+```bat
+cmake --build build-Release --target procRhai_bundle
+```
+
+Or run helper scripts directly:
+
+- `src/procRhai/copy_animvm.sh [build_dir]`
+- `src/procRhai/copy_animvm.bat [build_dir]`
+
 ## Run
 
 Place/copy the Rust library next to the `procRhai` executable, or pass the library path:
