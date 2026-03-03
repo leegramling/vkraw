@@ -51,8 +51,14 @@ public:
     void update(float deltaSeconds, float elapsedSeconds)
     {
         for (auto& [node, object] : objects_) {
-            (void)node;
-            if (object) object->update(deltaSeconds, elapsedSeconds);
+            if (!object) continue;
+            object->update(deltaSeconds, elapsedSeconds);
+            if (auto* sceneNode = sceneGraph_.find(node)) {
+                sceneNode->localTransform = object->modelMatrix();
+                if (sceneNode->entity != 0) {
+                    ecs_.setTransform(sceneNode->entity, core::TransformComponent{object->modelMatrix()});
+                }
+            }
         }
         sceneGraph_.updateWorldTransforms();
     }
