@@ -3,7 +3,8 @@
 `procRhai` is a minimal C++/Rust demo:
 
 - C++ app loads a Rust dynamic library at runtime.
-- Rust embeds Rhai, parses JSON5 config, compiles script once, and updates `ball.y` each tick.
+- Rust embeds Rhai, parses JSON5 config, compiles script once, and emits per-frame binary commands.
+- C++ host interns path/param IDs, applies command buffer updates to local `triangle/line/model` state, and prints frame summaries.
 
 ## Build Rust `animvm` cdylib
 
