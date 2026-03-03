@@ -99,7 +99,7 @@ set "TARGET_HELP_FILE=%BUILD_DIR%\_targets.txt"
 cmake --build "%BUILD_DIR%" %CFG% --target help > "%TARGET_HELP_FILE%" 2>&1
 set "BUILD_TARGETS="
 
-for %%T in (vkraw vkScene vkvsg vkglobe) do (
+for %%T in (vkraw vkScene procRhai vkvsg vkglobe) do (
   findstr /I /C:"%%T" "%TARGET_HELP_FILE%" >nul
   if not errorlevel 1 (
     set "BUILD_TARGETS=!BUILD_TARGETS! %%T"

@@ -281,6 +281,14 @@ if(WIN32)
     target_compile_definitions(vkScene PRIVATE VK_USE_PLATFORM_WIN32_KHR)
 endif()
 
+add_executable(procRhai
+    src/procRhai/main.cpp
+)
+target_compile_features(procRhai PRIVATE cxx_std_20)
+if(UNIX AND NOT APPLE)
+    target_link_libraries(procRhai PRIVATE ${CMAKE_DL_LIBS})
+endif()
+
 if(VKRAW_BUILD_VKVSG)
     add_executable(vkvsg
         src/vkvsg/main.cpp
