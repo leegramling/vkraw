@@ -2,6 +2,7 @@
 #include <cstring>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -70,6 +71,31 @@ std::string platformLibraryName()
 #endif
 }
 
+std::string dirnameOf(const std::string& path)
+{
+    const size_t pos = path.find_last_of("/\\");
+    if (pos == std::string::npos) return ".";
+    if (pos == 0) return path.substr(0, 1);
+    return path.substr(0, pos);
+}
+
+std::vector<std::string> candidateLibraryPaths(int argc, char** argv)
+{
+    std::vector<std::string> paths;
+    if (argc > 1) {
+        paths.push_back(argv[1]);
+        return paths;
+    }
+
+    const std::string libName = platformLibraryName();
+    if (argc > 0 && argv && argv[0] && std::strlen(argv[0]) > 0) {
+        paths.push_back(dirnameOf(argv[0]) + "/" + libName);
+    }
+    paths.push_back("./" + libName);
+    paths.push_back(libName);
+    return paths;
+}
+
 bool loadApi(const std::string& libraryPath, Api& api)
 {
 #ifdef _WIN32
@@ -116,14 +142,19 @@ int failWithVmError(const char* step, void* vm, const Api& api)
 
 int main(int argc, char** argv)
 {
-    std::string libraryPath = platformLibraryName();
-    if (argc > 1) libraryPath = argv[1];
-
     Api api{};
-    if (!loadApi(libraryPath, api)) {
-        std::cerr << "error: unable to resolve animvm symbols from " << libraryPath << '\n';
+    std::string loadedFrom;
+    for (const auto& candidate : candidateLibraryPaths(argc, argv)) {
+        if (loadApi(candidate, api)) {
+            loadedFrom = candidate;
+            break;
+        }
+    }
+    if (loadedFrom.empty()) {
+        std::cerr << "error: unable to resolve animvm symbols from any candidate path\n";
         return EXIT_FAILURE;
     }
+    std::cout << "[INFO] Loaded animvm from " << loadedFrom << '\n';
 
     void* vm = api.create();
     if (!vm) return failWithVmError("animvm_create", vm, api);
