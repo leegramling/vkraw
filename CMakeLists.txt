@@ -221,6 +221,7 @@ set(VKRAW_APP_SOURCES
     src/core/runtime/VkVisualizerResources.cpp
     src/core/runtime/VkVisualizerImGui.cpp
     src/core/runtime/VkVisualizerFrame.cpp
+    src/vkscene/GltfModelObject.cpp
 )
 
 add_executable(vkraw

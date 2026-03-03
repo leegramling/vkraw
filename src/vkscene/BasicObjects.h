@@ -74,4 +74,31 @@ private:
     float radius_ = 80.0f;
 };
 
+class LineSegmentObject final : public RenderObject {
+public:
+    LineSegmentObject(glm::vec3 p0, glm::vec3 p1, glm::vec3 color = glm::vec3(1.0f), uint32_t textureSlot = 0)
+        : RenderObject("LineSegmentObject",
+                       PrimitiveType::Lines,
+                       ShaderSet{"cube.vert.spv", "cube.frag.spv"},
+                       Material{.textureSlot = textureSlot, .baseColor = glm::vec4(1.0f)}),
+          p0_(p0),
+          p1_(p1),
+          color_(color) {}
+
+    void buildMesh(std::vector<core::Vertex>& outVertices,
+                   std::vector<uint32_t>& outIndices) const override
+    {
+        outVertices = {
+            {p0_, color_, {0.0f, 0.0f}},
+            {p1_, color_, {1.0f, 0.0f}},
+        };
+        outIndices = {0, 1};
+    }
+
+private:
+    glm::vec3 p0_{};
+    glm::vec3 p1_{};
+    glm::vec3 color_{1.0f, 1.0f, 1.0f};
+};
+
 } // namespace vkscene

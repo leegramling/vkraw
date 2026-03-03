@@ -27,6 +27,7 @@ public:
     void setRunDurationSeconds(float seconds) { runDurationSeconds_ = seconds; }
     void setEarthTexturePath(std::string path) { earthTexturePath_ = std::move(path); }
     void setSceneMode(bool enable) { sceneModeEnabled_ = enable; }
+    void setSceneModelPath(std::string path) { sceneModelPath_ = std::move(path); }
     uint32_t textureSlot(const std::string& name) const;
 
 private:
@@ -55,6 +56,7 @@ private:
     std::vector<uint32_t> sceneIndices_{};
     uint32_t sceneIndexCount_ = 0;
     bool sceneModeEnabled_ = false;
+    std::string sceneModelPath_{};
     vkscene::Scene scene_{};
     bool requestExit_ = false;
     struct SceneDrawItem {

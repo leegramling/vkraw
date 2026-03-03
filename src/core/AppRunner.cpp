@@ -33,7 +33,8 @@ void printHelp(const char* appName)
 #if defined(VKRAW_ENABLE_IMAGE_FILE_IO)
     std::cout << "/.tif/.tiff";
 #endif
-    std::cout << ")\n";
+    std::cout << ")\n"
+              << "  --model <path>            glTF model path (.gltf/.glb) for vkScene\n";
 }
 
 } // namespace
@@ -54,6 +55,8 @@ int runVisualizerApp(int argc, char** argv, bool sceneMode, const char* appName)
                 visualizer.setRunDurationSeconds(std::stof(argv[++i]));
             } else if (arg == "--earth-texture" && (i + 1) < argc) {
                 visualizer.setEarthTexturePath(argv[++i]);
+            } else if (arg == "--model" && (i + 1) < argc) {
+                visualizer.setSceneModelPath(argv[++i]);
             }
         }
 

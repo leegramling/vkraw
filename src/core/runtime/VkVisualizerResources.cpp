@@ -2,6 +2,7 @@
 
 #include "core/RenderTypes.h"
 #include "vkscene/BasicObjects.h"
+#include "vkscene/GltfModelObject.h"
 
 #if __has_include(<stb_image.h>)
 #define VKRAW_HAS_STB_IMAGE 1
@@ -769,8 +770,22 @@ void VkVisualizerApp::destroyTextureResources() {
 void VkVisualizerApp::initSceneSystems()
 {
     if (sceneModeEnabled_) {
+        std::string modelPath = sceneModelPath_;
+        if (modelPath.empty() && std::filesystem::exists("alien.glb")) {
+            modelPath = "alien.glb";
+        }
+        if (!modelPath.empty()) {
+            auto model = std::make_shared<vkscene::GltfModelObject>(modelPath, textureSlot("checker"));
+            if (model->loaded()) {
+                scene_.addObject(model, "SceneModel", scene_.rootNode());
+            } else {
+                std::cerr << "warning: failed to load model '" << modelPath << "': " << model->error() << '\n';
+            }
+        }
         scene_.addObject(std::make_shared<vkscene::TriangleObject>(), "SceneTriangle", scene_.rootNode());
-        scene_.addObject(std::make_shared<vkscene::LineCircleObject>(128, 95.0f, textureSlot("checker")), "SceneLineCircle", scene_.rootNode());
+        scene_.addObject(std::make_shared<vkscene::LineSegmentObject>(glm::vec3(-100.0f, -40.0f, 0.0f), glm::vec3(100.0f, -40.0f, 0.0f),
+                                                                       glm::vec3(1.0f, 1.0f, 1.0f), textureSlot("checker")),
+                         "SceneLine", scene_.rootNode());
         scene_.update(0.0f, 0.0f);
         return;
     }
