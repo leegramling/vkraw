@@ -645,4 +645,13 @@ void GltfModelObject::buildMesh(std::vector<core::Vertex>& outVertices, std::vec
     outIndices = indices_;
 }
 
+void GltfModelObject::update(float /*deltaSeconds*/, float elapsedSeconds)
+{
+    glm::mat4 model(1.0f);
+    model = glm::translate(model, baseTranslation_);
+    model = glm::rotate(model, elapsedSeconds * 0.8f, glm::vec3(0.0f, 1.0f, 0.0f));
+    model = glm::rotate(model, elapsedSeconds * 0.35f, glm::vec3(1.0f, 0.0f, 0.0f));
+    setModelMatrix(model);
+}
+
 } // namespace vkscene

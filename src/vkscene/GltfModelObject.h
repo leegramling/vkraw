@@ -15,6 +15,7 @@ public:
 
     void buildMesh(std::vector<core::Vertex>& outVertices,
                    std::vector<uint32_t>& outIndices) const override;
+    void update(float deltaSeconds, float elapsedSeconds) override;
 
 private:
     std::string path_{};
@@ -22,6 +23,7 @@ private:
     std::vector<uint32_t> indices_{};
     bool loaded_ = false;
     std::string error_{};
+    glm::vec3 baseTranslation_{70.0f, 0.0f, 0.0f};
 };
 
 } // namespace vkscene
