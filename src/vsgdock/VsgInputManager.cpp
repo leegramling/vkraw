@@ -26,6 +26,11 @@ void VsgInputManager::addWindow(vsg::ref_ptr<vsg::Window> window, ImGuiContext* 
     state.context = context;
     state.draggingScene = false;
     state.lastFrameTime = std::chrono::high_resolution_clock::now();
+    state.rect.x = window->traits()->x;
+    state.rect.y = window->traits()->y;
+    state.rect.width = window->traits()->width;
+    state.rect.height = window->traits()->height;
+    state.rect.valid = true;
 
     ScopedImGuiContext scoped(context);
     ImGuiIO& io = ImGui::GetIO();
@@ -120,6 +125,15 @@ bool VsgInputManager::leftMouseButtonDown() const
     return leftButtonDown;
 }
 
+bool VsgInputManager::getWindowRect(vsg::ref_ptr<vsg::Window> window, WindowRect& outRect) const
+{
+    if (!window) return false;
+    auto it = windows.find(window.get());
+    if (it == windows.end() || !it->second.rect.valid) return false;
+    outRect = it->second.rect;
+    return true;
+}
+
 VsgInputManager::ScopedImGuiContext::ScopedImGuiContext(ImGuiContext* next) :
     previous(ImGui::GetCurrentContext())
 {
@@ -165,6 +179,11 @@ void VsgInputManager::processEvent(vsg::UIEvent& event)
 
         ScopedImGuiContext scoped(state->context);
         ImGui::GetIO().DisplaySize = ImVec2(static_cast<float>(configure->width), static_cast<float>(configure->height));
+        state->rect.x = configure->x;
+        state->rect.y = configure->y;
+        state->rect.width = configure->width;
+        state->rect.height = configure->height;
+        state->rect.valid = true;
         return;
     }
 

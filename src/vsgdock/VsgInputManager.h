@@ -12,6 +12,15 @@ namespace vkvsg {
 class VsgInputManager : public vsg::Inherit<vsg::Visitor, VsgInputManager>
 {
 public:
+    struct WindowRect
+    {
+        int32_t x = 0;
+        int32_t y = 0;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        bool valid = false;
+    };
+
     explicit VsgInputManager(vsg::ref_ptr<vsg::Viewer> viewer);
 
     void setMainWindow(vsg::ref_ptr<vsg::Window> window);
@@ -34,6 +43,7 @@ public:
     bool consumeWireframeToggleRequest();
     bool consumeTearOffCloseRequest();
     bool leftMouseButtonDown() const;
+    bool getWindowRect(vsg::ref_ptr<vsg::Window> window, WindowRect& outRect) const;
 
 private:
     struct ImGuiWindowState
@@ -42,6 +52,7 @@ private:
         ImGuiContext* context = nullptr;
         bool draggingScene = false;
         std::chrono::high_resolution_clock::time_point lastFrameTime = std::chrono::high_resolution_clock::now();
+        WindowRect rect;
     };
 
     struct ScopedImGuiContext

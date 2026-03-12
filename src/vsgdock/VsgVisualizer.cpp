@@ -56,7 +56,10 @@ struct AppState : public vsg::Inherit<vsg::Object, AppState>
     bool dockBackRequested = false;
     bool resetMainPanelPlacement = false;
     bool suppressTearOffUntilMouseRelease = false;
+    bool suppressAutoDockUntilTearOffMove = false;
+    bool exitRequested = false;
     vkvsg::UIObject::PanelLayout mainPanelLayout;
+    vkvsg::VsgInputManager::WindowRect tearOffInitialRect;
 };
 
 class CompositeInstrumentation : public vsg::Inherit<vsg::Instrumentation, CompositeInstrumentation>
@@ -448,6 +451,18 @@ public:
     {
         ImGuiDockNodeFlags dockspaceFlags = ImGuiDockNodeFlags_PassthruCentralNode;
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), dockspaceFlags);
+        if (ImGui::BeginMainMenuBar())
+        {
+            if (ImGui::BeginMenu("File"))
+            {
+                if (ImGui::MenuItem("Exit"))
+                {
+                    state->exitRequested = true;
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::EndMainMenuBar();
+        }
         if (!state->globeControlsDetached)
         {
             if (state->resetMainPanelPlacement)
@@ -505,6 +520,24 @@ double computePanelOverlapRatio(const vkvsg::UIObject::PanelLayout& panelLayout,
     const double overlapWidth = std::max(0.0, right - left);
     const double overlapHeight = std::max(0.0, bottom - top);
     return (overlapWidth * overlapHeight) / panelArea;
+}
+
+double computeWindowOverlapRatio(const vkvsg::VsgInputManager::WindowRect& movingRect,
+                                 const vkvsg::VsgInputManager::WindowRect& targetRect)
+{
+    const double movingArea = static_cast<double>(movingRect.width) * static_cast<double>(movingRect.height);
+    if (!movingRect.valid || !targetRect.valid || movingArea <= 0.0) return 0.0;
+
+    const double left = std::max(static_cast<double>(movingRect.x), static_cast<double>(targetRect.x));
+    const double top = std::max(static_cast<double>(movingRect.y), static_cast<double>(targetRect.y));
+    const double right = std::min(static_cast<double>(movingRect.x + static_cast<int32_t>(movingRect.width)),
+                                  static_cast<double>(targetRect.x + static_cast<int32_t>(targetRect.width)));
+    const double bottom = std::min(static_cast<double>(movingRect.y + static_cast<int32_t>(movingRect.height)),
+                                   static_cast<double>(targetRect.y + static_cast<int32_t>(targetRect.height)));
+
+    const double overlapWidth = std::max(0.0, right - left);
+    const double overlapHeight = std::max(0.0, bottom - top);
+    return (overlapWidth * overlapHeight) / movingArea;
 }
 
 UiWindowResources createUiWindowResources(vsg::ref_ptr<vsg::Window> window, ImGuiContext* context, vsg::ref_ptr<vsg::Command> guiCommand, bool enableDocking)
@@ -725,8 +758,28 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
             tearOffTraits->windowTitle = "vsgdock - Globe Controls";
             tearOffTraits->width = static_cast<uint32_t>(std::max(320.0f, appState->mainPanelLayout.size.x));
             tearOffTraits->height = static_cast<uint32_t>(std::max(180.0f, appState->mainPanelLayout.size.y));
-            tearOffTraits->x = window->traits()->x + static_cast<int32_t>(std::max(0.0f, appState->mainPanelLayout.pos.x));
-            tearOffTraits->y = window->traits()->y + static_cast<int32_t>(std::max(0.0f, appState->mainPanelLayout.pos.y));
+            vkvsg::VsgInputManager::WindowRect mainRect;
+            if (!inputManager->getWindowRect(window, mainRect))
+            {
+                mainRect.x = window->traits()->x;
+                mainRect.y = window->traits()->y;
+                mainRect.width = window->traits()->width;
+                mainRect.height = window->traits()->height;
+                mainRect.valid = true;
+            }
+
+            const float panelCenterX = appState->mainPanelLayout.pos.x + (appState->mainPanelLayout.size.x * 0.5f);
+            const float mainCenterX = static_cast<float>(mainRect.width) * 0.5f;
+            const bool placeLeft = panelCenterX < mainCenterX;
+            const int32_t gutter = 24;
+
+            tearOffTraits->x = placeLeft
+                ? (mainRect.x - static_cast<int32_t>(tearOffTraits->width) - gutter)
+                : (mainRect.x + static_cast<int32_t>(mainRect.width) + gutter);
+
+            const float desiredTop = std::max(0.0f, appState->mainPanelLayout.pos.y);
+            const float maxTop = std::max(0.0f, static_cast<float>(mainRect.height) - static_cast<float>(tearOffTraits->height));
+            tearOffTraits->y = mainRect.y + static_cast<int32_t>(std::clamp(desiredTop, 0.0f, maxTop));
 
             auto tearOffWindow = vsg::Window::create(tearOffTraits);
             if (!tearOffWindow)
@@ -739,6 +792,8 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
             inputManager->setTearOffWindow(tearOffWindow);
             inputManager->addWindow(tearOffWindow, tearOffUi.context);
             appState->globeControlsDetached = true;
+            appState->suppressAutoDockUntilTearOffMove = true;
+            inputManager->getWindowRect(tearOffWindow, appState->tearOffInitialRect);
             viewer->addRecordAndSubmitTaskAndPresentation({tearOffUi.commandGraph});
             viewer->compile();
             return true;
@@ -755,7 +810,9 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
             appState->dockBackRequested = false;
             appState->resetMainPanelPlacement = true;
             appState->suppressTearOffUntilMouseRelease = true;
+            appState->suppressAutoDockUntilTearOffMove = false;
             appState->mainPanelLayout = {};
+            appState->tearOffInitialRect = {};
             viewer->assignRecordAndSubmitTaskAndPresentation({commandGraph});
         };
 
@@ -791,6 +848,12 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
             viewer->handleEvents();
             inputManager->processQueuedEvents();
 
+            if (appState->exitRequested)
+            {
+                viewer->close();
+                appState->exitRequested = false;
+            }
+
             if (inputManager->consumeTearOffCloseRequest()) pendingDestroyTearOffWindow = true;
             if (appState->dockBackRequested) pendingDestroyTearOffWindow = true;
 
@@ -807,6 +870,26 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
                     overlapRatio < kTearOffOverlapThreshold)
                 {
                     pendingCreateTearOffWindow = true;
+                }
+            }
+            else if (tearOffUi.window)
+            {
+                vkvsg::VsgInputManager::WindowRect mainRect;
+                vkvsg::VsgInputManager::WindowRect tearOffRect;
+                if (inputManager->getWindowRect(window, mainRect) && inputManager->getWindowRect(tearOffUi.window, tearOffRect))
+                {
+                    if (appState->suppressAutoDockUntilTearOffMove)
+                    {
+                        const int dx = std::abs(tearOffRect.x - appState->tearOffInitialRect.x);
+                        const int dy = std::abs(tearOffRect.y - appState->tearOffInitialRect.y);
+                        if (dx > 8 || dy > 8) appState->suppressAutoDockUntilTearOffMove = false;
+                    }
+
+                    if (!appState->suppressAutoDockUntilTearOffMove &&
+                        computeWindowOverlapRatio(tearOffRect, mainRect) >= kTearOffOverlapThreshold)
+                    {
+                        pendingDestroyTearOffWindow = true;
+                    }
                 }
             }
 
