@@ -75,6 +75,7 @@ endif()
 
 set(VSG_DEPS_INSTALL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../vsg_deps/install" CACHE PATH "Path to prebuilt VSG dependencies install prefix")
 option(VKRAW_BUILD_VKVSG "Build VSG-based renderer target (vkvsg)" ON)
+option(VKRAW_BUILD_VSGDOCK "Build docking-experiment VSG app (vsgdock) with isolated ImGui/VSGImGui dependencies" ON)
 
 if(VKRAW_BUILD_VKVSG)
     if(EXISTS "${VSG_DEPS_INSTALL_DIR}")
@@ -84,6 +85,9 @@ if(VKRAW_BUILD_VKVSG)
     find_package(vsgImGui CONFIG REQUIRED)
     find_package(vsgXchange CONFIG QUIET)
 endif()
+
+set(VSGDOCK_IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui-docking")
+set(VSGDOCK_VSGIMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/vsgImGui-docking")
 
 add_library(imgui STATIC
     external/imgui/imgui.cpp
@@ -360,6 +364,70 @@ if(VKRAW_BUILD_VKVSG)
     target_compile_definitions(vkglobe PRIVATE VKVSG_EXAMPLES_DIR="${VSG_DEPS_INSTALL_DIR}/share/vsgExamples")
     target_compile_definitions(vkglobe PRIVATE VKVSG_SHADER_DIR="${SHADER_OUTPUT_DIR}")
     add_dependencies(vkglobe shaders)
+endif()
+
+if(VKRAW_BUILD_VSGDOCK)
+    if(EXISTS "${VSGDOCK_IMGUI_DIR}" AND EXISTS "${VSGDOCK_VSGIMGUI_DIR}")
+        add_library(vsgImGuiDocking STATIC
+            ${VSGDOCK_VSGIMGUI_DIR}/include/vsgImGui/imgui.h
+            ${VSGDOCK_VSGIMGUI_DIR}/include/vsgImGui/SendEventsToImGui.h
+            ${VSGDOCK_VSGIMGUI_DIR}/include/vsgImGui/RenderImGui.h
+            ${VSGDOCK_VSGIMGUI_DIR}/include/vsgImGui/Texture.h
+            ${VSGDOCK_VSGIMGUI_DIR}/src/vsgImGui/RenderImGui.cpp
+            ${VSGDOCK_VSGIMGUI_DIR}/src/vsgImGui/SendEventsToImGui.cpp
+            ${VSGDOCK_VSGIMGUI_DIR}/src/vsgImGui/Texture.cpp
+            ${VSGDOCK_VSGIMGUI_DIR}/src/imgui/imgui.cpp
+            ${VSGDOCK_VSGIMGUI_DIR}/src/imgui/imgui_draw.cpp
+            ${VSGDOCK_VSGIMGUI_DIR}/src/imgui/imgui_tables.cpp
+            ${VSGDOCK_VSGIMGUI_DIR}/src/imgui/imgui_widgets.cpp
+            ${VSGDOCK_VSGIMGUI_DIR}/src/imgui/imgui_demo.cpp
+            ${VSGDOCK_VSGIMGUI_DIR}/src/imgui/backends/imgui_impl_vulkan.cpp
+            ${VSGDOCK_VSGIMGUI_DIR}/src/imgui/misc/cpp/imgui_stdlib.cpp
+            ${VSGDOCK_VSGIMGUI_DIR}/src/implot/implot.cpp
+            ${VSGDOCK_VSGIMGUI_DIR}/src/implot/implot_items.cpp
+            ${VSGDOCK_VSGIMGUI_DIR}/src/implot/implot_demo.cpp
+        )
+
+        target_compile_definitions(vsgImGuiDocking PRIVATE IMGUI_USER_CONFIG=<vsgImGui/Export.h>)
+
+        target_include_directories(vsgImGuiDocking PUBLIC
+            ${VSGDOCK_VSGIMGUI_DIR}/include
+            ${VSGDOCK_VSGIMGUI_DIR}/include/vsgImGui
+            ${VSGDOCK_VSGIMGUI_DIR}/src
+            ${VSGDOCK_VSGIMGUI_DIR}/src/imgui
+            ${VSGDOCK_VSGIMGUI_DIR}/src/implot
+        )
+
+        target_link_libraries(vsgImGuiDocking PUBLIC vsg::vsg)
+
+        add_executable(vsgdock
+            src/vsgdock/main.cpp
+            src/vsgdock/VsgVisualizer.cpp
+            src/vsgdock/LineObject.cpp
+            src/vsgdock/TileGeo.cpp
+        )
+
+        target_include_directories(vsgdock PRIVATE src)
+
+        target_link_libraries(vsgdock PRIVATE
+            vsg::vsg
+            vsgImGuiDocking
+        )
+
+        if(vsgXchange_FOUND)
+            target_link_libraries(vsgdock PRIVATE vsgXchange::vsgXchange)
+            target_compile_definitions(vsgdock PRIVATE VKVSG_HAS_VSGXCHANGE)
+        endif()
+
+        if(WIN32)
+            target_compile_definitions(vsgdock PRIVATE VK_USE_PLATFORM_WIN32_KHR)
+        endif()
+        target_compile_definitions(vsgdock PRIVATE VKVSG_EXAMPLES_DIR="${VSG_DEPS_INSTALL_DIR}/share/vsgExamples")
+        target_compile_definitions(vsgdock PRIVATE VKVSG_SHADER_DIR="${SHADER_OUTPUT_DIR}")
+        add_dependencies(vsgdock shaders)
+    else()
+        message(WARNING "VKRAW_BUILD_VSGDOCK is ON but docking dependencies were not found at ${VSGDOCK_IMGUI_DIR} and ${VSGDOCK_VSGIMGUI_DIR}. Skipping vsgdock target.")
+    endif()
 endif()
 
 if(VKRAW_BUILD_VKCORNELL)

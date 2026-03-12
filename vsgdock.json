@@ -1,0 +1,9 @@
+{
+  "earth_texture": "textures/HYP_50M_SR_W.jpg",
+  "osm_enabled": true,
+  "osm_cache": "cache/osm",
+  "osm_enable_alt_ft": 800000,
+  "osm_disable_alt_ft": 800001,
+  "osm_max_zoom": 15,
+  "osm_tile_radius": 6
+}
