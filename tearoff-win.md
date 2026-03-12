@@ -130,3 +130,48 @@ This feature needs a few low-level details that are easy to miss:
 The current repo does not have a docking-enabled `vsgImGui` stack wired in. Even if Dear ImGui itself is swapped to a docking branch, `vsgImGui` still needs backend work to support multiple platform windows cleanly.
 
 For `vkvsg`, app-managed multi-window is the smaller and safer change.
+
+## ImGui Docking Changes
+
+If this project moved to a docking-enabled Dear ImGui build, the design space would change, but not as much as it may first appear.
+
+What docking would likely improve:
+
+- `Globe Controls` could become a dockable ImGui window instead of an app-managed ownership toggle.
+- The user interaction model would be more natural because ImGui could manage undocking and redocking semantics directly.
+- The explicit `Dock Back` button could potentially be removed if docking behavior proved reliable enough.
+- The app would no longer need to infer user intent from the panel overlap ratio if ImGui itself could report or drive dock/undock transitions.
+
+What would still need work in this repo:
+
+- `vsgImGui` would still need backend support for multiple platform windows or multiple ImGui viewports.
+- VSG would still need a way to create, track, resize, and destroy native windows that correspond to ImGui platform windows.
+- Input routing would still need to be correct per native window.
+- Vulkan renderer backend state would still need to be initialized and shut down in a way that matches however many ImGui contexts or viewports are active.
+
+The main architectural difference would be this:
+
+- Current implementation:
+  - one application-owned ImGui context per VSG window
+  - one application-owned secondary VSG window
+  - explicit panel transfer between windows
+- Docking-enabled target:
+  - ideally one ImGui context with docking and multi-viewport support
+  - ImGui requests platform windows as needed
+  - VSG backend layer creates and services those windows
+
+If docking support were added all the way through `vsgImGui`, some current code in `vkvsg` would probably disappear:
+
+- overlap-based tear-off detection
+- explicit `Dock Back` state
+- explicit suppression of immediate re-tear-off after redock
+- some of the per-window panel placement reset logic
+
+But some low-level VSG integration would remain necessary:
+
+- native window lifecycle management
+- per-window swapchain/render graph handling
+- per-window event delivery
+- backend-safe shutdown ordering
+
+So the docking branch would change the feature from "application-managed tear-off" to "backend-supported ImGui-managed undock/dock", but it would not be a drop-in switch in the current codebase. The main work would move from `vkvsg` into the `vsgImGui` integration layer.
