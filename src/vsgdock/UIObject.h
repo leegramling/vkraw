@@ -4,60 +4,57 @@
 
 namespace vkvsg {
 
-class UIObject {
+class UIObject
+{
 public:
-    struct PanelLayout {
+    struct PanelLayout
+    {
         ImVec2 pos{0.0f, 0.0f};
         ImVec2 size{0.0f, 0.0f};
         bool moving = false;
     };
 
+    enum class DockPreset
+    {
+        TopLeft = 0,
+        TopRight,
+        Center,
+        BottomLeft,
+        BottomRight
+    };
+
     bool showDemoWindow = true;
+    bool showSettingsPanel = true;
+    bool showCursorPanel = true;
+    bool showFpsPanel = true;
+
     float deltaTimeMs = 0.0f;
     float fps = 0.0f;
     float gpuFrameMs = 0.0f;
     const char* presentModeName = "IMMEDIATE (requested)";
 
+    DockPreset cursorPanelDock = DockPreset::TopLeft;
+    DockPreset fpsPanelDock = DockPreset::BottomRight;
+    DockPreset settingsPanelDock = DockPreset::TopRight;
+
+    void drawMainMenu(bool* exitRequested);
+    void applyDockLayout(ImGuiID dockspaceId);
     void drawGlobeControls(bool wireframeEnabled,
                            bool textureFromFile,
                            PanelLayout* layout = nullptr,
                            ImGuiWindowFlags flags = 0,
                            bool showDockBackButton = false,
-                           bool* dockBackRequested = nullptr)
-    {
-        ImGui::Begin("Globe Controls", nullptr, flags);
-        ImGui::Text("LMB drag: rotate globe at origin");
-        ImGui::Text("Wheel: zoom camera");
-        ImGui::Text("Press W to toggle wireframe");
-        ImGui::Text("Wireframe: %s", wireframeEnabled ? "ON" : "OFF");
-        ImGui::Text("Texture source: %s", textureFromFile ? "Image file" : "Procedural fallback");
-        ImGui::Text("FPS %.1f", fps);
-        ImGui::Text("Frame time %.3f ms", deltaTimeMs);
-        ImGui::Text("Present mode %s", presentModeName);
-        ImGui::Text("GPU frame %.3f ms", gpuFrameMs);
-        if (showDockBackButton && dockBackRequested && ImGui::Button("Dock Back"))
-        {
-            *dockBackRequested = true;
-        }
-        if (layout)
-        {
-            layout->pos = ImGui::GetWindowPos();
-            layout->size = ImGui::GetWindowSize();
-            layout->moving = ImGui::IsMouseDragging(ImGuiMouseButton_Left);
-        }
-        ImGui::End();
-    }
+                           bool* dockBackRequested = nullptr);
+    void drawSettingsPanel();
+    void drawCursorPanel();
+    void drawFpsPanel();
+    void drawDemo();
 
-    void drawDemo()
-    {
-        ImGui::ShowDemoWindow(&showDemoWindow);
-    }
+private:
+    static const char* dockPresetLabel(DockPreset preset);
+    bool drawDockPresetCombo(const char* label, DockPreset& value);
 
-    void draw(bool wireframeEnabled, bool textureFromFile)
-    {
-        drawGlobeControls(wireframeEnabled, textureFromFile);
-        drawDemo();
-    }
+    bool dockLayoutDirty = true;
 };
 
 } // namespace vkvsg

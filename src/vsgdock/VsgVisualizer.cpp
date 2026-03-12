@@ -450,19 +450,9 @@ public:
     void record(vsg::CommandBuffer&) const override
     {
         ImGuiDockNodeFlags dockspaceFlags = ImGuiDockNodeFlags_PassthruCentralNode;
-        ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), dockspaceFlags);
-        if (ImGui::BeginMainMenuBar())
-        {
-            if (ImGui::BeginMenu("File"))
-            {
-                if (ImGui::MenuItem("Exit"))
-                {
-                    state->exitRequested = true;
-                }
-                ImGui::EndMenu();
-            }
-            ImGui::EndMainMenuBar();
-        }
+        const ImGuiID dockspaceId = ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), dockspaceFlags);
+        state->ui.drawMainMenu(&state->exitRequested);
+        state->ui.applyDockLayout(dockspaceId);
         if (!state->globeControlsDetached)
         {
             if (state->resetMainPanelPlacement)
@@ -473,6 +463,9 @@ public:
             }
             state->ui.drawGlobeControls(state->wireframe, state->textureFromFile, &state->mainPanelLayout);
         }
+        state->ui.drawSettingsPanel();
+        state->ui.drawCursorPanel();
+        state->ui.drawFpsPanel();
         state->ui.drawDemo();
     }
 

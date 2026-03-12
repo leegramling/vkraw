@@ -404,6 +404,7 @@ if(VKRAW_BUILD_VSGDOCK)
             src/vsgdock/main.cpp
             src/vsgdock/VsgVisualizer.cpp
             src/vsgdock/VsgInputManager.cpp
+            src/vsgdock/UIObject.cpp
             src/vsgdock/LineObject.cpp
             src/vsgdock/TileGeo.cpp
         )
