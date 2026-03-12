@@ -403,6 +403,7 @@ if(VKRAW_BUILD_VSGDOCK)
         add_executable(vsgdock
             src/vsgdock/main.cpp
             src/vsgdock/VsgVisualizer.cpp
+            src/vsgdock/VsgInputManager.cpp
             src/vsgdock/LineObject.cpp
             src/vsgdock/TileGeo.cpp
         )

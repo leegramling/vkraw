@@ -1,4 +1,4 @@
-# Tear-Off Globe Controls In `vkvsg`
+# Tear-Off Globe Controls In `vkvsg` And `vsgdock`
 
 ## Goal
 
@@ -57,6 +57,16 @@ Input routing uses a custom visitor instead of `vsgImGui::SendEventsToImGui`. Th
 - Updates `DeltaTime` for every ImGui context on each frame.
 
 Native OS cursor rendering is used. ImGui software cursor drawing is disabled in both contexts so the app does not show two cursors.
+
+In `vsgdock`, this logic now lives in a dedicated `VsgInputManager` rather than a narrow ImGui-only event bridge. That manager:
+
+- owns the per-window ImGui context map
+- handles window events such as `CloseWindowEvent` and `ConfigureWindowEvent`
+- arbitrates whether the main-window globe manipulator should receive mouse input
+- converts `W` key presses into app-side wireframe toggle requests
+- exposes tear-off close requests back to the app loop so window removal still happens after `present()`
+
+That is closer to the pattern used in `../vsgWorld/vsgBox/VsgInputManager.cpp/h`: the app owns event policy, and ImGui input routing is just one part of that policy.
 
 ## Tear-Off Trigger
 
@@ -127,9 +137,9 @@ This feature needs a few low-level details that are easy to miss:
 
 ## Why We Did Not Use Dear ImGui Docking/Viewports
 
-The current repo does not have a docking-enabled `vsgImGui` stack wired in. Even if Dear ImGui itself is swapped to a docking branch, `vsgImGui` still needs backend work to support multiple platform windows cleanly.
+The original `vkvsg` path does not have a docking-enabled `vsgImGui` stack wired in. `vsgdock` now does use docking-capable Dear ImGui dependencies, but that still does not provide native ImGui-managed platform windows in this repo because the `vsgImGui` backend layer does not implement the platform-window callbacks.
 
-For `vkvsg`, app-managed multi-window is the smaller and safer change.
+So for both `vkvsg` and `vsgdock`, tear-off is still application-managed and still follows the VSG multiwindow pattern.
 
 ## ImGui Docking Changes
 

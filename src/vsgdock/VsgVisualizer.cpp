@@ -1,11 +1,11 @@
 #include "vsgdock/VsgVisualizer.h"
+#include "vsgdock/VsgInputManager.h"
 #include "vsgdock/LineObject.h"
 #include "vsgdock/TileGeo.h"
 #include "vsgdock/UIObject.h"
 
 #include <vsg/all.h>
 #include <vsgImGui/RenderImGui.h>
-#include <vsgImGui/SendEventsToImGui.h>
 #include <vsgImGui/imgui.h>
 
 #include <algorithm>
@@ -29,12 +29,34 @@ constexpr double kWgs84EquatorialRadiusMeters = 6378137.0;
 constexpr double kWgs84PolarRadiusMeters = 6356752.314245;
 constexpr double kWgs84EquatorialRadiusFeet = kWgs84EquatorialRadiusMeters * kMetersToFeet;
 constexpr double kWgs84PolarRadiusFeet = kWgs84PolarRadiusMeters * kMetersToFeet;
+constexpr double kTearOffOverlapThreshold = 0.5;
+
+struct ScopedImGuiContext
+{
+    explicit ScopedImGuiContext(ImGuiContext* next) :
+        previous(ImGui::GetCurrentContext())
+    {
+        ImGui::SetCurrentContext(next);
+    }
+
+    ~ScopedImGuiContext()
+    {
+        ImGui::SetCurrentContext(previous);
+    }
+
+    ImGuiContext* previous = nullptr;
+};
 
 struct AppState : public vsg::Inherit<vsg::Object, AppState>
 {
     vkvsg::UIObject ui;
     bool wireframe = false;
     bool textureFromFile = false;
+    bool globeControlsDetached = false;
+    bool dockBackRequested = false;
+    bool resetMainPanelPlacement = false;
+    bool suppressTearOffUntilMouseRelease = false;
+    vkvsg::UIObject::PanelLayout mainPanelLayout;
 };
 
 class CompositeInstrumentation : public vsg::Inherit<vsg::Instrumentation, CompositeInstrumentation>
@@ -200,6 +222,38 @@ class UiRenderObject : public vsg::Inherit<vsg::Group, UiRenderObject>
 {
 };
 
+class ContextAwareRenderImGui : public vsg::Inherit<vsg::Group, ContextAwareRenderImGui>
+{
+public:
+    ContextAwareRenderImGui(ImGuiContext* inContext, vsg::ref_ptr<vsgImGui::RenderImGui> inRenderImGui) :
+        context(inContext),
+        renderImGui(std::move(inRenderImGui))
+    {
+        addChild(renderImGui);
+    }
+
+    void accept(vsg::RecordTraversal& rt) const override
+    {
+        ScopedImGuiContext scoped(context);
+        vsg::Group::accept(rt);
+    }
+
+private:
+    ImGuiContext* context = nullptr;
+    vsg::ref_ptr<vsgImGui::RenderImGui> renderImGui;
+};
+
+struct UiWindowResources
+{
+    vsg::ref_ptr<vsg::Window> window;
+    vsg::ref_ptr<vsg::CommandGraph> commandGraph;
+    vsg::ref_ptr<vsg::RenderGraph> renderGraph;
+    vsg::ref_ptr<UiRenderObject> uiRenderObject;
+    vsg::ref_ptr<vsgImGui::RenderImGui> renderImGui;
+    vsg::ref_ptr<ContextAwareRenderImGui> contextAwareRenderImGui;
+    ImGuiContext* context = nullptr;
+};
+
 bool parseJsonStringField(const std::string& text, const char* key, std::string& out)
 {
     const std::regex re(std::string("\"") + key + R"__("\s*:\s*"((?:\\.|[^"])*)")__");
@@ -218,32 +272,6 @@ bool loadEarthTexturePathFromConfig(const std::string& path, std::string& earthT
     buffer << in.rdbuf();
     return parseJsonStringField(buffer.str(), "earth_texture", earthTexturePath);
 }
-
-class GlobeInputHandler : public vsg::Inherit<vsg::Visitor, GlobeInputHandler>
-{
-public:
-    explicit GlobeInputHandler(vsg::ref_ptr<AppState> inState) :
-        state(std::move(inState))
-    {
-    }
-
-    void apply(vsg::KeyPressEvent& keyPress) override
-    {
-        if (keyPress.handled || keyPress.keyBase != vsg::KEY_w) return;
-        wireframeToggleRequested = true;
-    }
-
-    bool consumeWireframeToggleRequest()
-    {
-        const bool requested = wireframeToggleRequested;
-        wireframeToggleRequested = false;
-        return requested;
-    }
-
-private:
-    vsg::ref_ptr<AppState> state;
-    bool wireframeToggleRequested = false;
-};
 
 bool computeRayFromPointer(const vsg::ref_ptr<vsg::Camera>& camera, int32_t x, int32_t y, vsg::dvec3& origin, vsg::dvec3& direction)
 {
@@ -311,10 +339,12 @@ bool intersectEllipsoid(const vsg::dvec3& rayOriginWorld, const vsg::dvec3& rayD
 class GlobeRotateHandler : public vsg::Inherit<vsg::Visitor, GlobeRotateHandler>
 {
 public:
-    GlobeRotateHandler(vsg::ref_ptr<vsg::Camera> inCamera,
+    GlobeRotateHandler(vsg::ref_ptr<vsg::Window> inMainWindow,
+                       vsg::ref_ptr<vsg::Camera> inCamera,
                        vsg::ref_ptr<vsg::MatrixTransform> inGlobeTransform,
                        double inEquatorialRadius,
                        double inPolarRadius) :
+        mainWindow(std::move(inMainWindow)),
         camera(std::move(inCamera)),
         globeTransform(std::move(inGlobeTransform)),
         equatorialRadius(inEquatorialRadius),
@@ -324,7 +354,7 @@ public:
 
     void apply(vsg::ButtonPressEvent& e) override
     {
-        if (e.handled || e.button != 1) return;
+        if (e.handled || e.window != mainWindow.get() || e.button != 1) return;
         dragging = true;
         lastX = e.x;
         lastY = e.y;
@@ -332,12 +362,13 @@ public:
 
     void apply(vsg::ButtonReleaseEvent& e) override
     {
+        if (e.window != mainWindow.get()) return;
         if (e.button == 1) dragging = false;
     }
 
     void apply(vsg::MoveEvent& e) override
     {
-        if (e.handled || !dragging || !globeTransform || !camera) return;
+        if (e.handled || e.window != mainWindow.get() || !dragging || !globeTransform || !camera) return;
 
         vsg::dvec3 rayOriginPrev, rayDirPrev, rayOriginCurr, rayDirCurr;
         if (!computeRayFromPointer(camera, lastX, lastY, rayOriginPrev, rayDirPrev) ||
@@ -377,7 +408,7 @@ public:
 
     void apply(vsg::ScrollWheelEvent& e) override
     {
-        if (e.handled || !camera) return;
+        if (e.handled || e.window != mainWindow.get() || !camera) return;
         auto lookAt = camera->viewMatrix.cast<vsg::LookAt>();
         if (!lookAt) return;
 
@@ -395,6 +426,7 @@ public:
     }
 
 private:
+    vsg::ref_ptr<vsg::Window> mainWindow;
     vsg::ref_ptr<vsg::Camera> camera;
     vsg::ref_ptr<vsg::MatrixTransform> globeTransform;
     double equatorialRadius;
@@ -404,10 +436,10 @@ private:
     int32_t lastY = 0;
 };
 
-class DockingGui : public vsg::Inherit<vsg::Command, DockingGui>
+class MainWindowGui : public vsg::Inherit<vsg::Command, MainWindowGui>
 {
 public:
-    explicit DockingGui(vsg::ref_ptr<AppState> inState) :
+    explicit MainWindowGui(vsg::ref_ptr<AppState> inState) :
         state(std::move(inState))
     {
     }
@@ -416,12 +448,102 @@ public:
     {
         ImGuiDockNodeFlags dockspaceFlags = ImGuiDockNodeFlags_PassthruCentralNode;
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), dockspaceFlags);
-        state->ui.draw(state->wireframe, state->textureFromFile);
+        if (!state->globeControlsDetached)
+        {
+            if (state->resetMainPanelPlacement)
+            {
+                ImGui::SetNextWindowPos(ImVec2(16.0f, 96.0f), ImGuiCond_Always);
+                ImGui::SetNextWindowSize(ImVec2(360.0f, 170.0f), ImGuiCond_Always);
+                state->resetMainPanelPlacement = false;
+            }
+            state->ui.drawGlobeControls(state->wireframe, state->textureFromFile, &state->mainPanelLayout);
+        }
+        state->ui.drawDemo();
     }
 
 private:
     vsg::ref_ptr<AppState> state;
 };
+
+class TearOffGui : public vsg::Inherit<vsg::Command, TearOffGui>
+{
+public:
+    explicit TearOffGui(vsg::ref_ptr<AppState> inState) :
+        state(std::move(inState))
+    {
+    }
+
+    void record(vsg::CommandBuffer&) const override
+    {
+        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
+        state->ui.drawGlobeControls(
+            state->wireframe,
+            state->textureFromFile,
+            nullptr,
+            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar,
+            true,
+            &state->dockBackRequested);
+    }
+
+private:
+    vsg::ref_ptr<AppState> state;
+};
+
+double computePanelOverlapRatio(const vkvsg::UIObject::PanelLayout& panelLayout, const VkExtent2D& extent)
+{
+    const double panelWidth = std::max(0.0f, panelLayout.size.x);
+    const double panelHeight = std::max(0.0f, panelLayout.size.y);
+    const double panelArea = panelWidth * panelHeight;
+    if (panelArea <= 0.0) return 1.0;
+
+    const double left = std::max(0.0, static_cast<double>(panelLayout.pos.x));
+    const double top = std::max(0.0, static_cast<double>(panelLayout.pos.y));
+    const double right = std::min(static_cast<double>(extent.width), static_cast<double>(panelLayout.pos.x + panelLayout.size.x));
+    const double bottom = std::min(static_cast<double>(extent.height), static_cast<double>(panelLayout.pos.y + panelLayout.size.y));
+
+    const double overlapWidth = std::max(0.0, right - left);
+    const double overlapHeight = std::max(0.0, bottom - top);
+    return (overlapWidth * overlapHeight) / panelArea;
+}
+
+UiWindowResources createUiWindowResources(vsg::ref_ptr<vsg::Window> window, ImGuiContext* context, vsg::ref_ptr<vsg::Command> guiCommand, bool enableDocking)
+{
+    UiWindowResources resources;
+    resources.window = std::move(window);
+    resources.context = context;
+    resources.commandGraph = vsg::CommandGraph::create(resources.window);
+    resources.renderGraph = vsg::RenderGraph::create(resources.window);
+    resources.commandGraph->addChild(resources.renderGraph);
+    {
+        ScopedImGuiContext scoped(context);
+        resources.renderImGui = vsgImGui::RenderImGui::create(resources.window, guiCommand);
+        ImGuiIO& io = ImGui::GetIO();
+        if (enableDocking) io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+        io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+        io.MouseDrawCursor = false;
+    }
+    resources.uiRenderObject = UiRenderObject::create();
+    resources.contextAwareRenderImGui = ContextAwareRenderImGui::create(context, resources.renderImGui);
+    resources.uiRenderObject->addChild(resources.contextAwareRenderImGui);
+    resources.renderGraph->addChild(resources.uiRenderObject);
+    return resources;
+}
+
+void destroyUiWindowResources(UiWindowResources& resources)
+{
+    if (resources.context)
+    {
+        ScopedImGuiContext scoped(resources.context);
+        resources.uiRenderObject = {};
+        resources.renderGraph = {};
+        resources.commandGraph = {};
+        resources.contextAwareRenderImGui = {};
+        resources.renderImGui = {};
+    }
+    resources.context = nullptr;
+    resources.window = {};
+}
 
 double latestVsgGpuFrameMs(const vsg::Profiler& profiler)
 {
@@ -558,20 +680,14 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
         view->addChild(globeRenderObject);
         renderGraph->addChild(view);
 
-        auto renderImGui = vsgImGui::RenderImGui::create(window, DockingGui::create(appState));
-        {
-            ImGuiIO& io = ImGui::GetIO();
-            io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-            io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-            io.MouseDrawCursor = false;
-        }
+        UiWindowResources mainUi = createUiWindowResources(window, ImGui::CreateContext(), MainWindowGui::create(appState), true);
+        renderGraph->addChild(mainUi.uiRenderObject);
 
-        auto uiRenderObject = UiRenderObject::create();
-        uiRenderObject->addChild(renderImGui);
-        renderGraph->addChild(uiRenderObject);
+        auto inputManager = vkvsg::VsgInputManager::create(viewer);
+        inputManager->setMainWindow(window);
+        inputManager->addWindow(window, mainUi.context);
 
-        auto inputHandler = GlobeInputHandler::create(appState);
-        auto globeRotateHandler = GlobeRotateHandler::create(camera, globeTransform, kWgs84EquatorialRadiusFeet, kWgs84PolarRadiusFeet);
+        auto globeRotateHandler = GlobeRotateHandler::create(window, camera, globeTransform, kWgs84EquatorialRadiusFeet, kWgs84PolarRadiusFeet);
 
         auto profilerSettings = vsg::Profiler::Settings::create();
         profilerSettings->cpu_instrumentation_level = 0;
@@ -593,13 +709,55 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
             viewer->assignInstrumentation(profiler);
         }
 
-        viewer->addEventHandler(vsgImGui::SendEventsToImGui::create());
-        viewer->addEventHandler(vsg::CloseHandler::create(viewer));
+        viewer->addEventHandler(inputManager);
         viewer->addEventHandler(globeRotateHandler);
-        viewer->addEventHandler(inputHandler);
 
         viewer->assignRecordAndSubmitTaskAndPresentation({commandGraph});
         viewer->compile();
+
+        UiWindowResources tearOffUi;
+
+        auto createTearOffWindow = [&]() -> bool {
+            if (tearOffUi.window) return true;
+
+            auto tearOffTraits = vsg::WindowTraits::create(*window->traits());
+            tearOffTraits->device = window->getOrCreateDevice();
+            tearOffTraits->windowTitle = "vsgdock - Globe Controls";
+            tearOffTraits->width = static_cast<uint32_t>(std::max(320.0f, appState->mainPanelLayout.size.x));
+            tearOffTraits->height = static_cast<uint32_t>(std::max(180.0f, appState->mainPanelLayout.size.y));
+            tearOffTraits->x = window->traits()->x + static_cast<int32_t>(std::max(0.0f, appState->mainPanelLayout.pos.x));
+            tearOffTraits->y = window->traits()->y + static_cast<int32_t>(std::max(0.0f, appState->mainPanelLayout.pos.y));
+
+            auto tearOffWindow = vsg::Window::create(tearOffTraits);
+            if (!tearOffWindow)
+            {
+                std::cerr << "[vsgdock] Failed to create tear-off window." << std::endl;
+                return false;
+            }
+
+            tearOffUi = createUiWindowResources(tearOffWindow, ImGui::CreateContext(), TearOffGui::create(appState), false);
+            inputManager->setTearOffWindow(tearOffWindow);
+            inputManager->addWindow(tearOffWindow, tearOffUi.context);
+            appState->globeControlsDetached = true;
+            viewer->addRecordAndSubmitTaskAndPresentation({tearOffUi.commandGraph});
+            viewer->compile();
+            return true;
+        };
+
+        auto destroyTearOffWindow = [&]() {
+            if (!tearOffUi.window) return;
+            viewer->deviceWaitIdle();
+            inputManager->removeWindow(tearOffUi.window);
+            viewer->removeWindow(tearOffUi.window);
+            destroyUiWindowResources(tearOffUi);
+            inputManager->setTearOffWindow({});
+            appState->globeControlsDetached = false;
+            appState->dockBackRequested = false;
+            appState->resetMainPanelPlacement = true;
+            appState->suppressTearOffUntilMouseRelease = true;
+            appState->mainPanelLayout = {};
+            viewer->assignRecordAndSubmitTaskAndPresentation({commandGraph});
+        };
 
         uint64_t frameCount = 0;
         float runSeconds = 0.0f;
@@ -615,6 +773,8 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
 
         const auto start = std::chrono::steady_clock::now();
         auto last = start;
+        bool pendingCreateTearOffWindow = false;
+        bool pendingDestroyTearOffWindow = false;
 
         while (viewer->advanceToNextFrame())
         {
@@ -629,8 +789,28 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
             if (runDurationSeconds > 0.0f && runSeconds >= runDurationSeconds) break;
 
             viewer->handleEvents();
+            inputManager->processQueuedEvents();
 
-            if (inputHandler->consumeWireframeToggleRequest())
+            if (inputManager->consumeTearOffCloseRequest()) pendingDestroyTearOffWindow = true;
+            if (appState->dockBackRequested) pendingDestroyTearOffWindow = true;
+
+            if (appState->suppressTearOffUntilMouseRelease && !inputManager->leftMouseButtonDown())
+            {
+                appState->suppressTearOffUntilMouseRelease = false;
+            }
+
+            if (!appState->globeControlsDetached)
+            {
+                const double overlapRatio = computePanelOverlapRatio(appState->mainPanelLayout, window->extent2D());
+                if (!appState->suppressTearOffUntilMouseRelease &&
+                    appState->mainPanelLayout.moving &&
+                    overlapRatio < kTearOffOverlapThreshold)
+                {
+                    pendingCreateTearOffWindow = true;
+                }
+            }
+
+            if (inputManager->consumeWireframeToggleRequest())
             {
                 appState->wireframe = !appState->wireframe;
                 globeTransform->children.clear();
@@ -654,8 +834,22 @@ int vkvsg::VsgVisualizer::run(int argc, char** argv)
             viewer->update();
             viewer->recordAndSubmit();
             viewer->present();
+
+            if (pendingDestroyTearOffWindow)
+            {
+                destroyTearOffWindow();
+                pendingDestroyTearOffWindow = false;
+                pendingCreateTearOffWindow = false;
+            }
+            else if (pendingCreateTearOffWindow)
+            {
+                createTearOffWindow();
+                pendingCreateTearOffWindow = false;
+            }
         }
 
+        destroyTearOffWindow();
+        destroyUiWindowResources(mainUi);
         profiler->finish();
         appState->ui.gpuFrameMs = static_cast<float>(latestVsgGpuFrameMs(*profiler));
 
