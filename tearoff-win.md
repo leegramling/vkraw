@@ -11,13 +11,13 @@ The detached panel lives in a second VSG window. The main globe render stays in 
 The local `vsgImGui` integration is built around a single Dear ImGui context and the non-docking single-viewport model. That means:
 
 - Dear ImGui is not creating native platform windows for us.
-- `vsgImGui::SendEventsToImGui` routes input to one current ImGui context.
+- `vsgImGui::SendEventsToImGui` is not enough once more than one native VSG window is involved.
 - `vsgImGui::RenderImGui` renders whichever ImGui context is current when it records.
 
 So the tear-off behavior has to be application-managed:
 
 1. `vkvsg` creates the second `vsg::Window` itself.
-2. `vkvsg` owns one ImGui context per VSG window.
+2. `vkvsg` owns one ImGui context per VSG window, including the main window.
 3. `vkvsg` routes events to the correct ImGui context based on `event.window`.
 4. `vkvsg` decides which window owns the `Globe Controls` panel.
 
@@ -46,6 +46,8 @@ Each VSG window gets its own Dear ImGui context:
 
 The existing `vsgImGui::RenderImGui` implementation does not switch contexts for us, so `vkvsg` wraps each ImGui render node with a context-switching node. That wrapper calls `ImGui::SetCurrentContext()` before record traversal reaches `RenderImGui`.
 
+This is used for both windows, not just the tear-off window. That keeps the main window from inheriting the tear-off window's ImGui display size or viewport state.
+
 Input routing uses a custom visitor instead of `vsgImGui::SendEventsToImGui`. The custom handler:
 
 - Looks at `event.window`.
@@ -53,6 +55,8 @@ Input routing uses a custom visitor instead of `vsgImGui::SendEventsToImGui`. Th
 - Pushes pointer and keyboard events into that context's `ImGuiIO`.
 - Updates `DisplaySize` on `ConfigureWindowEvent`.
 - Updates `DeltaTime` for every ImGui context on each frame.
+
+Native OS cursor rendering is used. ImGui software cursor drawing is disabled in both contexts so the app does not show two cursors.
 
 ## Tear-Off Trigger
 
@@ -75,6 +79,8 @@ If:
 
 then `vkvsg` opens the second VSG window and transfers panel ownership to that window.
 
+The actual VSG window/task mutation is deferred until after `viewer->present()`. This matters because changing the viewer's window list or command graphs in the middle of an active frame proved unstable.
+
 ## Panel Ownership Model
 
 `Globe Controls` exists in exactly one window at a time.
@@ -88,14 +94,23 @@ then `vkvsg` opens the second VSG window and transfers panel ownership to that w
 
 The demo window remains in the main window.
 
-## Close Behavior
+## Dock Back And Close Behavior
 
-The tear-off window uses a custom close handler. Closing that window:
+The detached panel exposes an explicit `Dock Back` button. Pressing it:
 
-- does not close the whole app
-- removes the tear-off command graph from the viewer
-- destroys the tear-off ImGui context
+- marks the tear-off window for removal
+- removes only that window from the viewer
+- destroys the tear-off ImGui resources
 - returns `Globe Controls` to the main window
+- resets the main-window panel to a sane default position and size
+
+After a dock-back, tear-off is suppressed until the left mouse button is released. That prevents the panel from immediately tearing off again while the same drag is still active.
+
+The tear-off window also uses a custom close handler. Closing that native window is treated the same way as `Dock Back`:
+
+- it does not close the whole app
+- it removes only the tear-off window from the viewer
+- it returns `Globe Controls` to the main window
 
 Closing the main window still closes the viewer.
 
@@ -107,6 +122,8 @@ This feature needs a few low-level details that are easy to miss:
 - ImGui Vulkan backend state is stored per ImGui context, so each context must be current during backend init, record, and shutdown.
 - VSG window events carry `event.window`, which is enough to route input without OS-specific hooks.
 - Viewer task setup has to be updated when the tear-off window is added or removed, otherwise the extra window will not be recorded or presented.
+- Tear-off window removal is done with `viewer->removeWindow(...)` plus task reassignment, following the VSG multiwindow example's pattern for secondary-window closure.
+- Tear-off create/remove has to happen outside the active submit path. Deferring those transitions until after `present()` avoided crashes seen when mutating viewer state mid-frame.
 
 ## Why We Did Not Use Dear ImGui Docking/Viewports
 
