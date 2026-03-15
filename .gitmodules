@@ -19,3 +19,7 @@
 [submodule "lightweightvk"]
 	path = lightweightvk
 	url = https://github.com/corporateshark/lightweightvk.git
+[submodule "external/imgui-docking"]
+	path = external/imgui-docking
+	url = https://github.com/ocornut/imgui.git
+	branch = docking

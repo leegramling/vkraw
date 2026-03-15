@@ -9,6 +9,36 @@
 
 namespace core::runtime {
 
+namespace {
+
+template<class T>
+requires requires(T info) {
+    info.RenderPass = VK_NULL_HANDLE;
+    info.Subpass = 0;
+    info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+}
+void configureImGuiVulkanPipelineInfo(T& initInfo, VkRenderPass renderPass)
+{
+    initInfo.RenderPass = renderPass;
+    initInfo.Subpass = 0;
+    initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+}
+
+template<class T>
+requires requires(T info) {
+    info.PipelineInfoMain.RenderPass = VK_NULL_HANDLE;
+    info.PipelineInfoMain.Subpass = 0;
+    info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+}
+void configureImGuiVulkanPipelineInfo(T& initInfo, VkRenderPass renderPass)
+{
+    initInfo.PipelineInfoMain.RenderPass = renderPass;
+    initInfo.PipelineInfoMain.Subpass = 0;
+    initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+}
+
+} // namespace
+
 void VkVisualizerApp::initImGui() {
     VkDescriptorPoolSize poolSizes[] = {
         {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
@@ -62,10 +92,8 @@ void VkVisualizerApp::initImGui() {
     initInfo.DescriptorPool = context_.imguiDescriptorPool;
     initInfo.MinImageCount = context_.swapchain.image_count;
     initInfo.ImageCount = context_.swapchain.image_count;
-    initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     initInfo.UseDynamicRendering = false;
-    initInfo.RenderPass = context_.renderPass;
-    initInfo.Subpass = 0;
+    configureImGuiVulkanPipelineInfo(initInfo, context_.renderPass);
 
     if (!ImGui_ImplVulkan_Init(&initInfo)) {
         throw std::runtime_error("failed to initialize imgui vulkan backend");
