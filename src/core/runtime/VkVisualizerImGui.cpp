@@ -39,12 +39,21 @@ void VkVisualizerApp::initImGui() {
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+
+    ImGuiStyle& style = ImGui::GetStyle();
+    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        style.WindowRounding = 0.0f;
+        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+    }
+
     if (!ImGui_ImplGlfw_InitForVulkan(context_.window, true)) {
         throw std::runtime_error("failed to initialize imgui glfw backend");
     }
 
     ImGui_ImplVulkan_InitInfo initInfo{};
-    initInfo.ApiVersion = VK_API_VERSION_1_2;
     initInfo.Instance = context_.instance.instance;
     initInfo.PhysicalDevice = context_.physicalDevice.physical_device;
     initInfo.Device = context_.device.device;
@@ -53,10 +62,10 @@ void VkVisualizerApp::initImGui() {
     initInfo.DescriptorPool = context_.imguiDescriptorPool;
     initInfo.MinImageCount = context_.swapchain.image_count;
     initInfo.ImageCount = context_.swapchain.image_count;
+    initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     initInfo.UseDynamicRendering = false;
-    initInfo.PipelineInfoMain.RenderPass = context_.renderPass;
-    initInfo.PipelineInfoMain.Subpass = 0;
-    initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    initInfo.RenderPass = context_.renderPass;
+    initInfo.Subpass = 0;
 
     if (!ImGui_ImplVulkan_Init(&initInfo)) {
         throw std::runtime_error("failed to initialize imgui vulkan backend");

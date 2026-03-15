@@ -90,18 +90,18 @@ set(VSGDOCK_IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui-docking")
 set(VSGDOCK_VSGIMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/vsgImGui-docking")
 
 add_library(imgui STATIC
-    external/imgui/imgui.cpp
-    external/imgui/imgui_demo.cpp
-    external/imgui/imgui_draw.cpp
-    external/imgui/imgui_tables.cpp
-    external/imgui/imgui_widgets.cpp
-    external/imgui/backends/imgui_impl_glfw.cpp
-    external/imgui/backends/imgui_impl_vulkan.cpp
+    external/imgui-docking/imgui.cpp
+    external/imgui-docking/imgui_demo.cpp
+    external/imgui-docking/imgui_draw.cpp
+    external/imgui-docking/imgui_tables.cpp
+    external/imgui-docking/imgui_widgets.cpp
+    external/imgui-docking/backends/imgui_impl_glfw.cpp
+    external/imgui-docking/backends/imgui_impl_vulkan.cpp
 )
 
 target_include_directories(imgui PUBLIC
-    external/imgui
-    external/imgui/backends
+    external/imgui-docking
+    external/imgui-docking/backends
 )
 
 target_link_libraries(imgui PUBLIC glfw Vulkan::Vulkan)

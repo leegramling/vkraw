@@ -240,6 +240,12 @@ void VkVisualizerApp::drawFrame(float deltaSeconds, float elapsedSeconds) {
     presentInfo.pSwapchains = swapchains;
     presentInfo.pImageIndices = &imageIndex;
 
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        ImGui::UpdatePlatformWindows();
+        ImGui::RenderPlatformWindowsDefault();
+    }
+
     const VkResult presentResult = vkQueuePresentKHR(context_.presentQueue, &presentInfo);
     if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR || context_.framebufferResized) {
         context_.framebufferResized = false;

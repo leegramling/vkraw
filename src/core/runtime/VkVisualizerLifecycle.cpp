@@ -143,7 +143,6 @@ void VkVisualizerApp::recreateSwapchain() {
     ImGui_ImplVulkan_SetMinImageCount(context_.swapchain.image_count);
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplVulkan_InitInfo initInfo{};
-    initInfo.ApiVersion = VK_API_VERSION_1_2;
     initInfo.Instance = context_.instance.instance;
     initInfo.PhysicalDevice = context_.physicalDevice.physical_device;
     initInfo.Device = context_.device.device;
@@ -152,10 +151,10 @@ void VkVisualizerApp::recreateSwapchain() {
     initInfo.DescriptorPool = context_.imguiDescriptorPool;
     initInfo.MinImageCount = context_.swapchain.image_count;
     initInfo.ImageCount = context_.swapchain.image_count;
+    initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     initInfo.UseDynamicRendering = false;
-    initInfo.PipelineInfoMain.RenderPass = context_.renderPass;
-    initInfo.PipelineInfoMain.Subpass = 0;
-    initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    initInfo.RenderPass = context_.renderPass;
+    initInfo.Subpass = 0;
     if (!ImGui_ImplVulkan_Init(&initInfo)) {
         throw std::runtime_error("failed to reinitialize imgui vulkan backend");
     }
