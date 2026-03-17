@@ -15,6 +15,36 @@
 
 namespace core::runtime {
 
+namespace {
+
+template<class T>
+requires requires(T info) {
+    info.RenderPass = VK_NULL_HANDLE;
+    info.Subpass = 0;
+    info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+}
+void configureImGuiVulkanPipelineInfo(T& initInfo, VkRenderPass renderPass)
+{
+    initInfo.RenderPass = renderPass;
+    initInfo.Subpass = 0;
+    initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+}
+
+template<class T>
+requires requires(T info) {
+    info.PipelineInfoMain.RenderPass = VK_NULL_HANDLE;
+    info.PipelineInfoMain.Subpass = 0;
+    info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+}
+void configureImGuiVulkanPipelineInfo(T& initInfo, VkRenderPass renderPass)
+{
+    initInfo.PipelineInfoMain.RenderPass = renderPass;
+    initInfo.PipelineInfoMain.Subpass = 0;
+    initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+}
+
+} // namespace
+
 std::vector<char> VkVisualizerApp::readFile(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
     if (!file.is_open()) {
@@ -31,13 +61,11 @@ std::vector<char> VkVisualizerApp::readFile(const std::string& filename) {
 
 std::vector<char> VkVisualizerApp::readShaderFile(const std::string& filename) {
 #ifdef VKRAW_SHADER_DIR
-    try {
-        return readFile(std::string(VKRAW_SHADER_DIR) + "/" + filename);
-    } catch (const std::exception&) {
-        // Fall through to relative lookup so local overrides still work.
-    }
-#endif
+    const std::string buildShaderPath = std::string(VKRAW_SHADER_DIR) + "/" + filename;
+    return readFile(buildShaderPath);
+#else
     return readFile("shaders/" + filename);
+#endif
 }
 
 const char* VkVisualizerApp::presentModeToString(VkPresentModeKHR mode) {
@@ -151,10 +179,8 @@ void VkVisualizerApp::recreateSwapchain() {
     initInfo.DescriptorPool = context_.imguiDescriptorPool;
     initInfo.MinImageCount = context_.swapchain.image_count;
     initInfo.ImageCount = context_.swapchain.image_count;
-    initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     initInfo.UseDynamicRendering = false;
-    initInfo.RenderPass = context_.renderPass;
-    initInfo.Subpass = 0;
+    configureImGuiVulkanPipelineInfo(initInfo, context_.renderPass);
     if (!ImGui_ImplVulkan_Init(&initInfo)) {
         throw std::runtime_error("failed to reinitialize imgui vulkan backend");
     }
